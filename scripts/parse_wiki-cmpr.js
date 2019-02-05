@@ -90,7 +90,11 @@ function parse_wikitext (id) {
           results += '  '
         }
 
-        results += rows[i][col].text
+        if (rows[i][col].complexContent) {
+          results += '<WRAP>\n' + rows[i][col].text + '\n</WRAP>'
+        } else {
+          results += rows[i][col].text
+        }
         if (align == 'center' || align == 'left') {
           results += '  '
         }
@@ -262,6 +266,7 @@ function parse_wikitext (id) {
     tr_no: 0,
     current_row: false,
     in_table: false,
+    nested_tables: [],
     in_multi_plugin: false,
     is_rowspan: false,
     list_level: 0,
@@ -408,17 +413,21 @@ function parse_wikitext (id) {
         }
 
         if (tag == 'table') {
-          this.td_no = 0
-          this.tr_no = 0
+          let newTableProperties = {
+            numOfTds: 0,
+            numOfTrs: 0,
+            rowSpan: false,
+            currRowIndex: -1,
+            currColIndex: -1,
+            start: results.length,
+            tableText: '',
+            rows: []
+          }
           this.in_table = true
-          this.is_rowspan = false
-          this.row = -1
-          this.rows = new Array()
-          CurrentTable = this.rows
-          this.table_start = results.length
+          this.nested_tables.push(newTableProperties)
         } else if (tag == 'tr') {
-          this.tr_no++
-          this.td_no = 0
+          let currTable = this.nested_tables[this.nested_tables.length - 1]
+          currTable.numOfTrs++
           this.col = -1
           this.row++
           this.rows[this.row] = new Array()
@@ -1185,10 +1194,14 @@ function parse_wikitext (id) {
         this.xcl_markup = false
         return
       } else if (tag == 'table') {
-        this.in_table = false
         if (useComplexTables) {
+          let currentTable = this.nested_tables.pop()
+          this.in_table = !!this.nested_tables.length
+          if ()
           results = results.substring(0, this.table_start)
-          insert_table(this.rows)
+          insert_table(currentTable)
+        } else {
+          this.in_table = false
         }
       }
 
