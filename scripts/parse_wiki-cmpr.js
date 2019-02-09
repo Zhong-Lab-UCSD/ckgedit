@@ -8,106 +8,106 @@ function parse_wikitext (id) {
 
   function fontConflict () {
     var regex = /\>\s+(\*\*|__|\/\/|'')\s+_\s+\1\s+<\/font>/gm
-    results = results.replace(regex, function (m) {
+    activeResults = activeResults.replace(regex, function (m) {
       m = m.replace(/\s+/g, '')
       return m
     })
 
     regex = new RegExp('\\>(.*?)(\\]\\]\\<\\/font\\>)|(\\<\\/font\\>\\]\\])', 'gm')
-    if (results.match(regex)) return true
+    if (activeResults.match(regex)) return true
 
     regex = new RegExp('(\\{\\{(.*?)\\.\\w{2,4})\\|\\<font')
-    if (results.match(regex)) return true
+    if (activeResults.match(regex)) return true
 
     regex = new RegExp('\\{\\{(.*?)\\.\\w{2,4}\\|[:\\w\\-\\.\\s]+\\<\\/font')
-    if (results.match(regex)) return true
+    if (activeResults.match(regex)) return true
 
     regex = new RegExp('\\>\\{\\{(.*?)\\.\\w+\\<\\/font\\>\\b', 'gm')
-    if (results.match(regex)) return true
+    if (activeResults.match(regex)) return true
 
     return false
   }
-    /**
-       table debugging code;
-    */
-  function check_rowspans (rows, start_row, ini) {
-    var tmp = new Array()
-    for (var i = start_row; i < rows.length; i++) {
-      for (var col = 0; col < rows[i].length; col++) {
-        if (rows[i][col].rowspan > 0) {
-          var _text = rows[i][col].text
-          tmp.push({ row: i, column: col, spans: rows[i][col].rowspan, text: _text })
-          if (!ini) break
-        }
-      }
-    }
-    return tmp
-  }
+  //   /**
+  //      table debugging code;
+  //   */
+  // function check_rowspans (rows, start_row, ini) {
+  //   var tmp = new Array()
+  //   for (var i = start_row; i < rows.length; i++) {
+  //     for (var col = 0; col < rows[i].length; col++) {
+  //       if (rows[i][col].rowspan > 0) {
+  //         var _text = rows[i][col].text
+  //         tmp.push({ row: i, column: col, spans: rows[i][col].rowspan, text: _text })
+  //         if (!ini) break
+  //       }
+  //     }
+  //   }
+  //   return tmp
+  // }
 
-  function insert_rowspan (row, col, spans, rows, shift) {
-    var prev_colspans = rows[row][col].colspan ? rows[row][col].colspan : 0
-    rows[row][col].rowspan = 0
-    for (i = 0; i < spans - 1; i++) {
-            // debug_row(rows,row,col,"insert_rowspan start");
-      rows[++row].splice(col, 0, { type: 'td', rowspan: 0, colspan: prev_colspans, prev_colspan: prev_colspans, text: ' ::: ' })
-    }
-  }
+  // function insert_rowspan (row, col, spans, rows, shift) {
+  //   var prev_colspans = rows[row][col].colspan ? rows[row][col].colspan : 0
+  //   rows[row][col].rowspan = 0
+  //   for (i = 0; i < spans - 1; i++) {
+  //           // debug_row(rows,row,col,"insert_rowspan start");
+  //     rows[++row].splice(col, 0, { type: 'td', rowspan: 0, colspan: prev_colspans, prev_colspan: prev_colspans, text: ' ::: ' })
+  //   }
+  // }
 
-  function reorder_span_rows (rows) {
-    var tmp_start = check_rowspans(rows, 0, true)
-    var num_spans = tmp_start.length
-    if (!num_spans) return false
+  // function reorder_span_rows (rows) {
+  //   var tmp_start = check_rowspans(rows, 0, true)
+  //   var num_spans = tmp_start.length
+  //   if (!num_spans) return false
 
-    var row = tmp_start[0].row
-    var col = tmp_start[0].column
-    insert_rowspan(row, col, tmp_start[0].spans, rows)
+  //   var row = tmp_start[0].row
+  //   var col = tmp_start[0].column
+  //   insert_rowspan(row, col, tmp_start[0].spans, rows)
 
-    num_spans--
-    for (var i = 0; i < num_spans; i++) {
-      row++
-      var tmp = check_rowspans(rows, row, false)
-      if (tmp.length) {
-        insert_rowspan(tmp[0].row, tmp[0].column, tmp[0].spans, rows)
-      }
-    }
-    return true
-  }
+  //   num_spans--
+  //   for (var i = 0; i < num_spans; i++) {
+  //     row++
+  //     var tmp = check_rowspans(rows, row, false)
+  //     if (tmp.length) {
+  //       insert_rowspan(tmp[0].row, tmp[0].column, tmp[0].spans, rows)
+  //     }
+  //   }
+  //   return true
+  // }
 
-  function insert_table (rows) {
-    if (!useComplexTables) return
-    for (var i = 0; i < rows.length; i++) {
-      if (!reorder_span_rows(rows)) break
-    }
-
-    results += '\n'
-    for (var i = 0; i < rows.length; i++) {
-      results += '\n'
-      for (var col = 0; col < rows[i].length; col++) {
-        var type = rows[i][col].type == 'td' ? '|' : '^'
-        results += type
-        var align = rows[i][col].align ? rows[i][col].align : false
-        if (align == 'center' || align == 'right') {
-          results += '  '
-        }
-
-        if (rows[i][col].complexContent) {
-          results += '<WRAP>\n' + rows[i][col].text + '\n</WRAP>'
+  function getTableDokuCode (table) {
+    let tableResult = ''
+    for (let i = 0; i < table.rows.length; i++) {
+      let type = null
+      for (let col = 0; col < table.rows[i].length; col++) {
+        let currCell = table.rows[i][col]
+        if (currCell === TABLE_ROW_SPAN || currCell === TABLE_ROW_SPAN_HEADER) {
+          tableResult += (currCell === TABLE_ROW_SPAN ? '|' : '^') +
+            markup['row_span']
+        } else if (currCell === TABLE_COL_SPAN) {
+          // TABLE_COL_SPAN is just a blank string
+          // `type` is previous type
+          tableResult += type
         } else {
-          results += rows[i][col].text
-        }
-        if (align == 'center' || align == 'left') {
-          results += '  '
-        }
+          type = currCell.type === 'td' ? '|' : '^'
+          tableResult += type
+          var align = currCell.align ? currCell.align : false
+          if (align === 'center' || align === 'right') {
+            tableResult += '  '
+          }
 
-        if (rows[i][col].colspan) {
-          for (var n = 0; n < rows[i][col].colspan - 1; n++) {
-            results += type
+          if (currCell.complexContent) {
+            tableResult += '<WRAP>\n' + currCell.text + '\n</WRAP>'
+          } else {
+            tableResult += currCell.text
+          }
+          if (align === 'center' || align === 'left') {
+            tableResult += '  '
           }
         }
       }
 
-      results += '|'
+      tableResult += '|\n'
     }
+    return tableResult
   }
 
   window.dwfckTextChanged = false
@@ -131,10 +131,10 @@ function parse_wikitext (id) {
     'h3': '\n==== ',
     'h4': '\n=== ',
     'h5': '\n== ',
-    'td': '|',
-    'th': '^',
-    'tr': ' ',
-    'table': '\n\n',
+    'td': '__TABLE_PLACEHOLDER__',
+    'th': '__TABLE_PLACEHOLDER__',
+    'tr': '__TABLE_PLACEHOLDER__',
+    'table': '__TABLE_PLACEHOLDER__',
     'ol': '  - ',
     'ul': '  * ',
     'li': '',
@@ -163,9 +163,9 @@ function parse_wikitext (id) {
     'h3': ' ====\n',
     'h4': ' ===\n',
     'h5': ' ==\n',
-    'td': ' ',
-    'th': ' ',
-    'tr': '|\n',
+    'td': '__TABLE_PLACEHOLDER__',
+    'th': '__TABLE_PLACEHOLDER__',
+    'tr': '__TABLE_PLACEHOLDER__',
     'ol': ' ',
     'ul': ' ',
     'li': '\n',
@@ -221,7 +221,8 @@ function parse_wikitext (id) {
   markup['pre_td'] = '<'  // removes newline from before < which corrupts table
   var format_chars = { 'strong': true, 'b': true, 'i': true, 'em': true, 'u': true, 'del': true, 'strike': true, 'code': true, 'sup': true, 'sub': true, 's': true }
 
-  var results = ''
+  var rootLevelResultsCache = ''
+  var activeResults = ''
   var HTMLParser_LBR = false
   var HTMLParser_PRE = false
   var HTMLParser_Geshi = false
@@ -249,6 +250,9 @@ function parse_wikitext (id) {
   }
   String.frasl = new RegExp('⁄\|&frasl;\|&#8260;\|&#x2044;', 'g')
   geshi_classes = new RegExp(geshi_classes)
+  const TABLE_ROW_SPAN = 1
+  const TABLE_ROW_SPAN_HEADER = 2
+  const TABLE_COL_SPAN = 10
   HTMLParser(CKEDITOR.instances.wiki__text.getData(), {
     attribute: '',
     link_title: '',
@@ -265,8 +269,41 @@ function parse_wikitext (id) {
     td_no: 0,
     tr_no: 0,
     current_row: false,
-    in_table: false,
-    nested_tables: [],
+    /**
+     * nestedTables - an array of tables currently in the hierarchy.
+     * @type {Array<Object>}
+     * Every table object should have the following properties:
+     * @property {number} currRowIndex - the row index of the current cursor
+     * @property {number} currColIndex - the column index of the current cursor
+     * @property {boolean} rowSpan - whether the current cursor is in a rowspan
+     * @property {number} start - the start offset of the table text in the
+     *    current context (body or nested tag)
+     * @property {Array<Object>} rows - the two-dimensional array of cell
+     *    objects
+     * @property {Array<number>} pendingRowSpans - an sparse array of pending
+     *    number of rowspan cells from previous rows, for examples, if a
+     *    cell from last row at column index 3 has rowspan = 5, then
+     *    `pendingRowSpans[3] = 4` for the current row, when the rowspan
+     *    placeholder is inserted into `rows[currRowIndex]`, the value will be
+     *    decreased by 1, so `pendingRowSpans[3] = 3` for the next row.
+     *
+     * @property {Array<boolean>} pendingRowSpanIsHeader - an sparse array
+     *    indicating whether pending rowspan cell is from a `th` (`true`) or a
+     *    `td`.
+     *
+     * For the cell object, it will be either `TABLE_ROW_SPAN` ( = 1 ) for
+     * rowspan placeholders, `TABLE_COL_SPAN` ( = 2 ) for colspan placeholders,
+     * or an object with the following properties:
+     *    @property {string} type - the type of the cell, either `th` or `td`
+     *    @property {string} text - everything contained within the cell
+     *    @property {number} [rowspan] - the number of rows this cell spans
+     *    @property {number} [colspan] - the number of columns this cell spans
+     *    @property {string} [align] - the horizontal alignment of the table
+     *      should be either `left`, `right` or `center`, if exists
+     *    @property {boolean} [complexContent] - whether a <WRAP> element is
+     *      needed (multi-line cell contents, for example)
+     */
+    nestedTables: [],
     in_multi_plugin: false,
     is_rowspan: false,
     list_level: 0,
@@ -305,13 +342,13 @@ function parse_wikitext (id) {
     mfile: false,
 
     backup: function (c1, c2) {
-      var c1_inx = results.lastIndexOf(c1)     // start position of chars to delete
-      var c2_inx = results.indexOf(c2, c1_inx)  // position of expected next character
+      var c1_inx = activeResults.lastIndexOf(c1)     // start position of chars to delete
+      var c2_inx = activeResults.indexOf(c2, c1_inx)  // position of expected next character
       if (c1_inx == -1 || c2_inx == -1) return
       if (c1.length + c2_inx == c2_inx) {
-        var left_side = results.substring(0, c1_inx) // from 0 up to but not including c1
-        var right_side = results.substring(c2_inx)  // from c2 to end of string
-        results = left_side + right_side
+        var left_side = activeResults.substring(0, c1_inx) // from 0 up to but not including c1
+        var right_side = activeResults.substring(c2_inx)  // from c2 to end of string
+        activeResults = left_side + right_side
         return true
       }
       return false
@@ -341,10 +378,10 @@ function parse_wikitext (id) {
           return
         }
         if (format_chars[tag] && (this.in_font || this.in_header)) {
-          results += ' '
+          activeResults += ' '
           var t = 'temp_' + tag
-          results += markup[t]
-          results += ' '
+          activeResults += markup[t]
+          activeResults += ' '
           return
         } else if (tag == 'acronym') {
           return
@@ -353,6 +390,9 @@ function parse_wikitext (id) {
           if (tag == 'sup') return
         }
         if (tag == 'ol' || tag == 'ul') {
+          if (this.nestedTables.length > 0 && !this.list_level) {
+            activeResults += '\n'
+          }
           this.prev_list_level = this.list_level
           this.list_level++
           if (this.list_level == 1) this.list_started = false
@@ -384,7 +424,7 @@ function parse_wikitext (id) {
           var type = ''
           this.xcl_markup = false  // set to false in end() as well, double sure
           this.in_link = true
-          this.link_pos = results.length
+          this.link_pos = activeResults.length
           this.link_formats = new Array()
           this.footnote = false
           var bottom_note = false
@@ -406,44 +446,64 @@ function parse_wikitext (id) {
 
         if (tag == 'p') {
           this.in_link = false
-          if (this.in_table) {
+          if (this.nestedTables.length > 0) {
             tag = 'p_insert'
             HTMLParser_TABLE = true
           }
         }
 
-        if (tag == 'table') {
+        if (tag === 'table') {
           let newTableProperties = {
-            numOfTds: 0,
-            numOfTrs: 0,
             rowSpan: false,
             currRowIndex: -1,
             currColIndex: -1,
-            start: results.length,
-            tableText: '',
-            rows: []
+            numOfTrs: 0,
+            start: activeResults.length,
+            rows: [],
+            pendingRowSpans: [],
+            pendingRowSpanIsHeader: []
           }
-          this.in_table = true
-          this.nested_tables.push(newTableProperties)
-        } else if (tag == 'tr') {
-          let currTable = this.nested_tables[this.nested_tables.length - 1]
-          currTable.numOfTrs++
-          this.col = -1
-          this.row++
-          this.rows[this.row] = new Array()
-          this.current_row = this.rows[this.row]
-        } else if (tag == 'td' || tag == 'th') {
-          this.td_no++
-          this.col++
-          this.current_row[this.col] = { type: tag, rowspan: 0, colspan: 0, text: '' }
-          this.cell_start = results.length
-          this.current_cell = this.current_row[this.col]
-          if (this.td_rowspan && this.rowspan_col == this.td_no && this.td_no != this.last_column) {
-            this.is_rowspan = true
-            this.td_rowspan--
+          if (this.nestedTables.length > 0) {
+            let currTable = this.nestedTables[this.nestedTables.length - 1]
+            let currCell =
+              currTable.rows[currTable.currRowIndex][currTable.currColIndex]
+            currCell.text = activeResults
+            currCell.complexContent = true
           } else {
-            this.is_rowspan = false
+            rootLevelResultsCache = activeResults
           }
+          activeResults = ''
+          this.nestedTables.push(newTableProperties)
+        } else if (tag === 'tr') {
+          let currTable = this.nestedTables[this.nestedTables.length - 1]
+          currTable.numOfTrs++
+          currTable.currRowIndex++
+          currTable.rows.push([])
+          // insert all colspan placeholders at the beginning
+          for (currTable.currColIndex = -1;
+            currTable.pendingRowSpans[currTable.currColIndex + 1] > 0;
+            currTable.currColIndex++
+          ) {
+            currTable.rows[currTable.currRowIndex].push(
+              currTable.pendingRowSpanIsHeader[currTable.currColIndex + 1]
+                ? TABLE_ROW_SPAN_HEADER : TABLE_ROW_SPAN
+            )
+            currTable.pendingRowSpans[currTable.currColIndex + 1]--
+          }
+        } else if (tag === 'td' || tag === 'th') {
+          // all rowspan and colspan placeholders will be inserted after this
+          //    cell is closed (or the line is closed)
+          let currTable = this.nestedTables[this.nestedTables.length - 1]
+          let newCell = {
+            type: tag,
+            rowspan: 0,
+            colspan: 0,
+            text: ''
+          }
+          currTable.rows[currTable.currRowIndex].push(newCell)
+          currTable.currColIndex++
+          currTable.headerRow = currTable.headerRow || tag === 'th'
+          this.in_td = true
         }
 
         var matches
@@ -454,19 +514,48 @@ function parse_wikitext (id) {
         var dwfck_note = false
 
         for (var i = 0; i < attrs.length; i++) {
-                    // if(!confirm(tag + ' ' + attrs[i].name + '="' + attrs[i].escaped + '"')) exit;
-          if (tag == 'td' || tag == 'th') {
-            if (attrs[i].name == 'colspan') {
-              this.current_row[this.col].colspan = attrs[i].value
-            }
-            if (attrs[i].name == 'class') {
-              if ((matches = attrs[i].value.match(/(left|center|right)/))) {
-                this.current_row[this.col].align = matches[1]
+          // if(!confirm(tag + ' ' + attrs[i].name + '="' + attrs[i].escaped + '"')) exit;
+          if (tag === 'td' || tag === 'th') {
+            try {
+              let currTable = this.nestedTables[this.nestedTables.length - 1]
+              let currCell =
+                currTable.rows[currTable.currRowIndex][currTable.currColIndex]
+              if (attrs[i].name === 'align') {
+                currCell.align = attrs[i].escaped
+              } else if (attrs[i].name === 'class') {
+                if (
+                  (matches = attrs[i].value.match(/\s*(\w+)align/))
+                ) {
+                  currCell.align = matches[1]
+                } else if (
+                  (matches = attrs[i].value.match(/(left|center|right)/))
+                ) {
+                  currCell.align = matches[1]
+                }
+              } else if (attrs[i].name === 'colspan') {
+                currCell.colspan = parseInt(attrs[i].value)
+                if (currCell.rowspan > 0) {
+                  for (let col = 1; col < currCell.colspan; col++) {
+                    currTable.pendingRowSpans[currTable.currColIndex + col] =
+                      currCell.rowspan - 1
+                    currTable.pendingRowSpanIsHeader[currTable.currColIndex + col] =
+                      (tag === 'th')
+                  }
+                }
+              } else if (attrs[i].name === 'rowspan') {
+                currCell.rowspan = parseInt(attrs[i].value)
+                currTable.pendingRowSpans[currTable.currColIndex] =
+                  currCell.rowspan - 1
+                currTable.pendingRowSpanIsHeader[currTable.currColIndex] =
+                  (tag === 'th')
+                for (let col = 1; col < currCell.colspan; col++) {
+                  currTable.pendingRowSpans[currTable.currColIndex + col] =
+                    currCell.rowspan - 1
+                  currTable.pendingRowSpanIsHeader[currTable.currColIndex + col] =
+                    (tag === 'th')
+                }
               }
-            }
-            if (attrs[i].name == 'rowspan') {
-              this.current_row[this.col].rowspan = attrs[i].value
-            }
+            } catch (ignore) { }
           }
           if (attrs[i].escaped == 'u' && tag == 'em') {
             tag = 'u'
@@ -513,7 +602,7 @@ function parse_wikitext (id) {
 
           if (tag == 'span' && !ckgedit_xcl_styles) {
             if (attrs[i].name == 'style') {
-              if (!this.in_font) results += '__STYLE__'
+              if (!this.in_font) activeResults += '__STYLE__'
               this.in_font = true
               this.using_fonts = true
               matches = attrs[i].value.match(/font-family:\s*([\w\-\s,]+);?/)
@@ -548,28 +637,6 @@ function parse_wikitext (id) {
                 }
               }
             }
-          }
-          if (tag == 'td' || tag == 'th') {
-            if (tag == 'td') {
-              results = results.replace(/\^$/, '|')
-            }
-            this.in_td = true
-            if (attrs[i].name == 'align') {
-              this.td_align = attrs[i].escaped
-            } else if (attrs[i].name == 'class') {
-              matches = attrs[i].value.match(/\s*(\w+)align/)
-              if (matches) {
-                this.td_align = matches[1]
-              }
-            } else if (attrs[i].name == 'colspan') {
-              HTMLParser_COLSPAN = true
-              this.td_colspan = attrs[i].escaped
-            } else if (attrs[i].name == 'rowspan') {
-              this.td_rowspan = attrs[i].escaped - 1
-              this.rowspan_col = this.td_no
-            }
-
-            HTMLParser_TABLE = true
           }
 
           if (tag == 'a') {
@@ -847,7 +914,7 @@ function parse_wikitext (id) {
                 this.code_type = 'file'
               }
               HTMLParser_PRE = true
-              if (this.in_table) tag = 'pre_td'
+              if (this.nestedTables.length > 0) tag = 'pre_td'
               break
             }
           } else if (tag == 'img') {
@@ -950,7 +1017,7 @@ function parse_wikitext (id) {
 
         if (this.is_smiley) {
           if (alt) {
-            results += alt + ' '
+            activeResults += alt + ' '
             alt = ''
           }
           this.is_smiley = false
@@ -959,65 +1026,65 @@ function parse_wikitext (id) {
         if (this.link_only) tag = 'img'
         if (tag == 'br') {
           if (this.in_multi_plugin) {
-            results += '\n'
+            activeResults += '\n'
             return
           }
 
           if (!this.code_type) {
             HTMLParser_LBR = true
           } else if (this.code_type) {
-            results += '\n'
+            activeResults += '\n'
             return
           }
 
-          if (this.in_table) {
-            results += HTMLParserParaInsert
+          if (this.nestedTables.length > 0) {
+            activeResults += HTMLParserParaInsert
             return
           }
           if (this.list_started) {
-            results += '_LIST_EOFL_' /* enables newlines in lists:   abc \\def */
+            activeResults += '_LIST_EOFL_' /* enables newlines in lists:   abc \\def */
           } else {
-            results += '\\\\  '
+            activeResults += '\\\\  '
             return
           }
         } else if (tag.match(/^h(\d+|r)/)) {
-          var str_len = results.length
+          var str_len = activeResults.length
           if (tag.match(/h(\d+)/)) {
             this.in_header = true
           }
           if (str_len) {
-            if (results.charCodeAt(str_len - 1) == 32) {
-              results = results.replace(/\x20+$/, '')
+            if (activeResults.charCodeAt(str_len - 1) == 32) {
+              activeResults = activeResults.replace(/\x20+$/, '')
             }
           }
         } else if (this.last_col_pipes) {
-          if (format_chars[tag]) results += markup[tag]
+          if (format_chars[tag]) activeResults += markup[tag]
           tag = 'blank'
         } else if (dwfck_note) {
-          results += dwfck_note
+          activeResults += dwfck_note
           return
         }
 
         if (tag == 'b' || tag == 'i' && this.list_level) {
-          if (results.match(/(\/\/|\*)(\x20)+/)) {
-            results = results.replace(/(\/\/|\*)(\x20+)\-/, '$1\n' + '$2-')
+          if (activeResults.match(/(\/\/|\*)(\x20)+/)) {
+            activeResults = activeResults.replace(/(\/\/|\*)(\x20+)\-/, '$1\n' + '$2-')
           }
         }
 
         if (tag == 'li' && this.list_level) {
           if (this.list_level == 1 & !this.list_started) {
-            results += '\n'
+            activeResults += '\n'
             this.list_started = true
           }
-          results = results.replace(/[\x20]+$/, '')
+          activeResults = activeResults.replace(/[\x20]+$/, '')
 
           for (var s = 0; s < this.list_level; s++) {
                         // this handles format characters at the ends of list lines
-            if (results.match(/_FORMAT_SPACE_\s*$/)) {
-              results = results.replace(/_FORMAT_SPACE_\s*$/, '\n')
+            if (activeResults.match(/_FORMAT_SPACE_\s*$/)) {
+              activeResults = activeResults.replace(/_FORMAT_SPACE_\s*$/, '\n')
             }
             if (this.list_level > 1) {
-              results += '  '
+              activeResults += '  '
             }
           }
 
@@ -1044,15 +1111,15 @@ function parse_wikitext (id) {
           }
 
           if (media_class && media_class == 'mediafile') {
-            results += markup['img']
-            results += this.attr + '|'
+            activeResults += markup['img']
+            activeResults += this.attr + '|'
             this.is_mediafile = true
           }
 
           return
         } else if (this.in_font) {
           if (tag == 'a') {
-            results = results.replace(/__STYLE__/, '[[' + this.attr + '|')
+            activeResults = activeResults.replace(/__STYLE__/, '[[' + this.attr + '|')
             this.in_font = false
           }
           return
@@ -1064,19 +1131,11 @@ function parse_wikitext (id) {
         if (this.mfile && !this.attr) {
           this.attr = this.mfile
         }
-        results += markup[tag]          // Set tag
+        activeResults += markup[tag]          // Set tag
 
-        if (tag == 'td' || tag == 'th' || (this.last_col_pipes && this.td_align == 'center')) {
-          if (this.is_rowspan) {
-            results += markup['row_span'] + ' | '
-            this.is_rowspan = false
-          }
-          if (this.td_align == 'center' || this.td_align == 'right') {
-            results += '  '
-          }
-        } else if (tag == 'a' && this.attr) {
+        if (tag == 'a' && this.attr) {
           this.attr = this.attr.replace(/%7c/, '%257c')
-          results += this.attr + '|'
+          activeResults += this.attr + '|'
         } else if (tag == 'img') {
           var link_type = this.image_link_type
           this.image_link_type = ''
@@ -1100,20 +1159,20 @@ function parse_wikitext (id) {
             img_size = ''
           }
           if (img_align && img_align != 'left') {
-            results += '  '
+            activeResults += '  '
           }
           this.attr += img_size
           if (img_align == 'center' || img_align == 'left') {
             this.attr += '  '
           }
           if (alt) {
-            results += this.attr + '|' + alt + '}}'
-          } else results += this.attr + '}}'
+            activeResults += this.attr + '|' + alt + '}}'
+          } else activeResults += this.attr + '}}'
           this.attr = 'src'
         } else if (tag == 'pre' || tag == 'pre_td') {
           if (this.downloadable_file) this.attr += ' ' + this.downloadable_file
           if (!this.attr) this.attr = 'code'
-          results += this.attr + '>'
+          activeResults += this.attr + '>'
           this.downloadable_file = ''
           this.downloadable_code = false
         }
@@ -1122,12 +1181,12 @@ function parse_wikitext (id) {
 
     end: function (tag) {
       if (format_chars[tag] && (this.in_font || this.in_header)) {
-        results += ' '
+        activeResults += ' '
         if (tag == 'sup' || tag == 'sub' || tag == 'del' || tag == 'strike' || tag == 's') {
           var t = 'temp_c' + tag
         } else var t = 'temp_' + tag
-        results += markup[t]
-        results += ' '
+        activeResults += markup[t]
+        activeResults += ' '
         return
       }
       if (this.in_endnotes && tag == 'a') return
@@ -1155,16 +1214,16 @@ function parse_wikitext (id) {
         var font_str = '<font ' + this.font_size + '/' + this.font_family + ';;' + this.font_color + ';;' + this.font_bgcolor + '>'
         var inherits = font_str.match(/(inherit)/g)
         if (inherits && inherits.length < 3) HTMLParserFontInfix = true
-        var font_start = results.lastIndexOf('__STYLE__')
-        results = results.splice(font_start, 9, font_str)
-        results = results.replace(/_FORMAT_SPACE_<font/m, '<font')
+        var font_start = activeResults.lastIndexOf('__STYLE__')
+        activeResults = activeResults.splice(font_start, 9, font_str)
+        activeResults = activeResults.replace(/_FORMAT_SPACE_<font/m, '<font')
         this.font_size = 'inherit'
         this.font_family = 'inherit'
         this.font_color = 'inherit'
         this.font_bgcolor = 'inherit'
         this.in_font = false
         HTMLParserFont = true
-        results = results.replace(/__STYLE__/g, '')
+        activeResults = activeResults.replace(/__STYLE__/g, '')
       }
       if (tag == 'span' && this.curid) {
         this.curid = false
@@ -1173,11 +1232,6 @@ function parse_wikitext (id) {
       if (tag == 'dl' && this.downloadable_code) {
         this.downloadable_code = false
         return
-      }
-      if (useComplexTables && (tag == 'td' || tag == 'th')) {
-        this.current_cell.text = results.substring(this.cell_start)
-        this.current_cell.text = this.current_cell.text.replace(/:::/gm, '')
-        this.current_cell.text = this.current_cell.text.replace(/^[\s\|\^]+/, '')
       }
       if (tag == 'a' && (this.export_code || this.code_snippet)) {
         this.export_code = false
@@ -1193,19 +1247,21 @@ function parse_wikitext (id) {
       } else if (tag == 'a' && this.xcl_markup) {
         this.xcl_markup = false
         return
-      } else if (tag == 'table') {
-        if (useComplexTables) {
-          let currentTable = this.nested_tables.pop()
-          this.in_table = !!this.nested_tables.length
-          if ()
-          results = results.substring(0, this.table_start)
-          insert_table(currentTable)
+      } else if (tag === 'table') {
+        let finishedTable = this.nestedTables.pop()
+        if (this.nestedTables.length) {
+          let currTable = this.nestedTables[this.nestedTables.length - 1]
+          let currCell =
+            currTable.rows[currTable.currRowIndex][currTable.currColIndex]
+          activeResults = currCell.text
         } else {
-          this.in_table = false
+          activeResults = rootLevelResultsCache
         }
+        this.in_table = !!this.nestedTables.length
+        activeResults += '\n\n' + getTableDokuCode(finishedTable) + '\n'
       }
 
-      if (tag == 'p' && this.in_table) {
+      if (tag == 'p' && this.nestedTables.length > 0) {
         tag = 'p_insert'
         HTMLParser_TABLE = true
       }
@@ -1214,9 +1270,9 @@ function parse_wikitext (id) {
         return
       }
 
-      if (tag == 'code' && !this.list_started) {     // empty code markup corrupts results
-        if (results.match(/''\s*$/m)) {
-          results = results.replace(/''\s*$/, '\n')
+      if (tag == 'code' && !this.list_started) {     // empty code markup corrupts activeResults
+        if (activeResults.match(/''\s*$/m)) {
+          activeResults = activeResults.replace(/''\s*$/, '\n')
           return
         }
       } else if (tag == 'a' && this.attr == 'src') {
@@ -1248,8 +1304,8 @@ function parse_wikitext (id) {
         if (this.code_type) {
           tag += this.code_type + '>'
         } else {
-          var codeinx = results.lastIndexOf('code')
-          var fileinx = results.lastIndexOf('file')
+          var codeinx = activeResults.lastIndexOf('code')
+          var fileinx = activeResults.lastIndexOf('file')
           if (fileinx > codeinx) {
             this.code_type = 'file'
           } else this.code_type = 'code'
@@ -1265,63 +1321,56 @@ function parse_wikitext (id) {
         tag = markup[tag]
       }
 
-      if (current_tag == 'tr') {
-        if (this.last_col_pipes) {
-          tag = '\n'
-          this.last_col_pipes = ''
+      if (current_tag === 'td' || current_tag === 'th') {
+        let currTable = this.nestedTables[this.nestedTables.length - 1]
+        let currCell =
+          currTable.rows[currTable.currRowIndex][currTable.currColIndex]
+        currCell.text = activeResults.replace(/__TABLE_PLACEHOLDER__/g, '')
+        if (currCell.text.includes('\n')) {
+          currCell.complexContent = true
         }
-
-        if (this.td_rowspan && this.rowspan_col == this.td_no + 1) {
-          this.is_rowspan = false
-          this.last_column = this.td_no
-          this.td_rowspan--
-          tag = '|' + markup['row_span'] + '|\n'
+        activeResults = ''
+        for (let col = 1; col < currCell.colspan; col++) {
+          currTable.rows[currTable.currRowIndex].push(TABLE_COL_SPAN)
+          currTable.currColIndex++
         }
-      } else if (current_tag == 'td' || current_tag == 'th') {
-        this.last_col_pipes = ''
         this.in_td = false
+        // add all consecutive rowspan cells
+        for (; currTable.pendingRowSpans[currTable.currColIndex + 1] > 0;
+          currTable.currColIndex++
+        ) {
+          currTable.rows[currTable.currRowIndex].push(
+            currTable.pendingRowSpanIsHeader[currTable.currColIndex + 1]
+              ? TABLE_ROW_SPAN_HEADER : TABLE_ROW_SPAN
+          )
+          currTable.pendingRowSpans[currTable.currColIndex + 1]--
+        }
       } else if (current_tag.match(/h\d+/)) {
         this.in_header = false
       }
 
       if (markup['li']) {
-        if (results.match(/\n$/) && !this.list_level) {
+        if (activeResults.match(/\n$/) && !this.list_level) {
           tag = ''
         }
       }
 
       if (this.in_endnotes && current_tag == 'sup') { return }
-      results += tag
+      activeResults += tag
 
       if (format_chars[current_tag]) {
         if (this.list_level) {
           this.format_in_list = true
           HTMLFormatInList = true
         }
-        results += markup['format_space']
+        activeResults += markup['format_space']
         HTMLParser_FORMAT_SPACE = markup['format_space']
       }
       this.last_tag = current_tag
 
-      if (this.td_colspan && !useComplexTables) {
-        if (this.td_align == 'center') results += ' '
-        var _colspan = '|'
-        if (current_tag == 'th') { _colspan = '^' }
-        var colspan = _colspan
-        for (var i = 1; i < this.td_colspan; i++) {
-          colspan += _colspan
-        }
-        this.last_col_pipes = colspan
-        results += colspan
-        this.td_colspan = false
-      } else if (this.td_align == 'center') {
-        results += ' '
-        this.td_align = ''
-      }
-
       if (current_tag == 'a' && this.link_formats.length) {
-        var end_str = results.substring(this.link_pos)
-        var start_str = results.substring(0, this.link_pos)
+        var end_str = activeResults.substring(this.link_pos)
+        var start_str = activeResults.substring(0, this.link_pos)
         var start_format = ''
         var end_format = ''
         for (var i = 0; i < this.link_formats.length; i++) {
@@ -1333,7 +1382,7 @@ function parse_wikitext (id) {
 
         start_str += start_format
         end_str += end_format
-        results = start_str + end_str
+        activeResults = start_str + end_str
         this.link_formats = new Array()
         this.in_link = false
       } else if (current_tag == 'a') {
@@ -1355,12 +1404,12 @@ function parse_wikitext (id) {
       if (this.interwiki) {
         text = text.replace(String.frasl, '\/')
       }
-      if (this.interwiki && results.match(/>\w+\s*\|$/)) {
+      if (this.interwiki && activeResults.match(/>\w+\s*\|$/)) {
         this.interwiki = false
         if (this.attr) {
-          results += text
+          activeResults += text
         } else {
-          results = results.replace(/>\w+\s*\|$/, '>' + text)
+          activeResults = activeResults.replace(/>\w+\s*\|$/, '>' + text)
         }
         return
       }
@@ -1373,15 +1422,15 @@ function parse_wikitext (id) {
       }
             )
             // adjust spacing on multi-formatted strings
-      results = results.replace(/([\/\*_])_FORMAT_SPACE_([\/\*_]{2})_FORMAT_SPACE_$/, '$1$2@@_SP_@@')
+      activeResults = activeResults.replace(/([\/\*_])_FORMAT_SPACE_([\/\*_]{2})_FORMAT_SPACE_$/, '$1$2@@_SP_@@')
       if (text.match(/^&\w+;/)) {
-        results = results.replace(/_FORMAT_SPACE_\s*$/, '')   // remove unwanted space after character entity
+        activeResults = activeResults.replace(/_FORMAT_SPACE_\s*$/, '')   // remove unwanted space after character entity
       }
 
       if (this.link_only) {
         if (text) {
           replacement = '|' + text + '}} '
-          results = results.replace(/\}\}\s*$/, replacement)
+          activeResults = activeResults.replace(/\}\}\s*$/, replacement)
         }
         return
       }
@@ -1409,16 +1458,16 @@ function parse_wikitext (id) {
           }
         }
 
-        if (this.in_td && !text) {
-          text = '_FCKG_BLANK_TD_'
-          this.in_td = false
-        }
+        // if (this.in_td && !text) {
+        //   text = '_FCKG_BLANK_TD_'
+        //   this.in_td = false
+        // }
       } else {
         text = text.replace(/&lt;\s/g, '<')
         text = text.replace(/\s&gt;/g, '>')
         var geshi = text.match(/^\s*geshi:\s+(.*)$/m)
         if (geshi) {
-          results = results.replace(/<(code|file)>\s*$/, '<' + '$1' + ' ' + geshi[1] + '>')
+          activeResults = activeResults.replace(/<(code|file)>\s*$/, '<' + '$1' + ' ' + geshi[1] + '>')
           text = text.replace(geshi[0], '')
         }
       }
@@ -1428,9 +1477,9 @@ function parse_wikitext (id) {
           return
         }
         if (text.match(/^[\-,:;!_]/)) {
-          results += text
+          activeResults += text
         } else {
-          results += ' ' + text
+          activeResults += ' ' + text
         }
         return
       }
@@ -1442,7 +1491,7 @@ function parse_wikitext (id) {
 
             /* remove space between link end markup and following punctuation */
       if (this.last_tag == 'a' && text.match(/^[\.,;\:\!]/)) {
-        results = results.replace(/\s$/, '')
+        activeResults = activeResults.replace(/\s$/, '')
       }
 
       if (this.in_header) {
@@ -1450,11 +1499,11 @@ function parse_wikitext (id) {
         text = text.replace(/--/g, '&ndash;')
       }
       if (this.list_started) {
-        results = results.replace(/_LIST_EOFL_\s*L_BR_K\s*$/, '_LIST_EOFL_')
+        activeResults = activeResults.replace(/_LIST_EOFL_\s*L_BR_K\s*$/, '_LIST_EOFL_')
       }
       if (!this.code_type) {   // keep special character literals outside of code block
                 // don't touch samba share or Windows path backslashes
-        if (!results.match(/\[\[\\\\.*?\|$/) && !text.match(/\w:(\\(\w?))+/)) {
+        if (!activeResults.match(/\[\[\\\\.*?\|$/) && !text.match(/\w:(\\(\w?))+/)) {
           if (!text.match(/\\\\[\w\.\-\_]+\\[\w\.\-\_]+/)) {
             text = text.replace(/([\\])/g, '%%$1%%')
           }
@@ -1486,20 +1535,20 @@ function parse_wikitext (id) {
       }
 
       if (text && text.length) {
-        results += text
+        activeResults += text
       }
             // remove space between formatted character entity and following character string
-      results = results.replace(/(&\w+;)\s*([\*\/_]{2})_FORMAT_SPACE_(\w+)/, '$1$2$3')
+      activeResults = activeResults.replace(/(&\w+;)\s*([\*\/_]{2})_FORMAT_SPACE_(\w+)/, '$1$2$3')
 
       if (this.list_level && this.list_level > 1) {
-        results = results.replace(/(\[\[.*?\]\])([ ]+[\*\-].*)$/, ' $1\n$2')
+        activeResults = activeResults.replace(/(\[\[.*?\]\])([ ]+[\*\-].*)$/, ' $1\n$2')
       }
 
       try {    // in case regex throws error on dynamic regex creation
         var regex = new RegExp('([\*\/\_]{2,})_FORMAT_SPACE_([\*\/\_]{2,})(' + RegExp.escape(text) + ')$')
-        if (results.match(regex)) {
+        if (activeResults.match(regex)) {
                     // remove left-over space inside multiple format sequences
-          results = results.replace(regex, '$1$2$3')
+          activeResults = activeResults.replace(regex, '$1$2$3')
         }
       } catch (ex) { }
 
@@ -1511,7 +1560,7 @@ function parse_wikitext (id) {
     },
 
     comment: function (text) {
-            // results += "<!--" + text + "-->";
+            // activeResults += "<!--" + text + "-->";
     },
 
     dbg: function (text, heading) {
@@ -1527,25 +1576,25 @@ function parse_wikitext (id) {
       HTMLParser_DEBUG += heading + text + '\n__________\n'
     }
 
-  }
-    )
+  })
 
-    /*
-      we allow escaping of troublesome characters in plugins by enclosing them withinback slashes, as in \*\
-      the escapes are removed here together with any DW percent escapes
-   */
+  /*
+    we allow escaping of troublesome characters in plugins by enclosing them withinback slashes, as in \*\
+    the escapes are removed here together with any DW percent escapes
+  */
 
-  results = results.replace(/(\[\[\\\\)(.*?)\]\]/gm, function (match, brackets, block) {
+  activeResults = activeResults.replace(/__TABLE_PLACEHOLDER__/g, '')
+  activeResults = activeResults.replace(/(\[\[\\\\)(.*?)\]\]/gm, function (match, brackets, block) {
     block = block.replace(/\\/g, '_SMB_')
     return brackets + block + ']]'
   })
 
-  results = results.replace(/%%\\%%/g, '_ESC_BKSLASH_')
-  results = results.replace(/%*\\%*([^\w]{1})%*\\%*/g, '$1')
+  activeResults = activeResults.replace(/%%\\%%/g, '_ESC_BKSLASH_')
+  activeResults = activeResults.replace(/%*\\%*([^\w]{1})%*\\%*/g, '$1')
 
-  results = results.replace(/_SMB_/g, '\\')
+  activeResults = activeResults.replace(/_SMB_/g, '\\')
 
-  results = results.replace(/(\s*={2,}).*?CKGE_TMP_(\w+)(.*?).*?CKGE_TMP_c?\2.*?\1/gm, function (m, tag) {   // remove formats from headers
+  activeResults = activeResults.replace(/(\s*={2,}).*?CKGE_TMP_(\w+)(.*?).*?CKGE_TMP_c?\2.*?\1/gm, function (m, tag) {   // remove formats from headers
     m = m.replace(/CKGE_TMP_\w+/gm, '')
     var v = jQuery('#formatdel').val()
     if (!v) {
@@ -1553,12 +1602,12 @@ function parse_wikitext (id) {
     }
     return m
   })
-  results = results.replace(/\s?(CKGE_TMP_\w+)\s?/gm, function (m, tag) {
+  activeResults = activeResults.replace(/\s?(CKGE_TMP_\w+)\s?/gm, function (m, tag) {
     if ($FORMAT_SUBST[tag]) return $FORMAT_SUBST[tag]
     return m
   })
 
-  results = results.replace(/(\s*={2,})(.*?)(\[\[|\{\{)(.*?)(\]\]|\}\})(.*?)\1/gm, function (m, h_markup, whatever, bracket_1, inner, bracket_2, end_str) {
+  activeResults = activeResults.replace(/(\s*={2,})(.*?)(\[\[|\{\{)(.*?)(\]\]|\}\})(.*?)\1/gm, function (m, h_markup, whatever, bracket_1, inner, bracket_2, end_str) {
     end_str = end_str.replace(/\[\[(.*?)\|(.*?)\]\]/g, '$2')
     end_str = end_str.replace(/\{\{(.*?)\|(.*?)\}\}/g, '$2')
     m = h_markup + ' ' + whatever + ' ' + inner.replace(/.*?\|(.*?)/, '$1') + ' ' + end_str + ' ' + h_markup
@@ -1570,11 +1619,11 @@ function parse_wikitext (id) {
   })
 
   if (id == 'test') {
-    if (!HTMLParser_test_result(results)) return
+    if (!HTMLParser_test_result(activeResults)) return
   }
 
-  results = results.replace(/\{ \{ rss&gt;Feed:/mg, '{{rss&gt;http://')
-  results = results.replace(/~ ~ (NOCACHE|NOTOC)~ ~/mg, '~~' + '$1' + '~~')
+  activeResults = activeResults.replace(/\{ \{ rss&gt;Feed:/mg, '{{rss&gt;http://')
+  activeResults = activeResults.replace(/~ ~ (NOCACHE|NOTOC)~ ~/mg, '~~' + '$1' + '~~')
   if (HTML_InterWiki) {
     var ReplaceLinkMatch = function (tag, link) {
       tag_1 = tag.replace(/oIWIKIo(.*)cIWIKIc/, '$1')
@@ -1582,7 +1631,7 @@ function parse_wikitext (id) {
       link = link.replace(/\s/, '%20')
       return (link == tag_1)
     }
-    results = results.replace(/\[\[(\w+\.?\w{0,12})>(.*?)\|(.*?)\]\]/gm, function (match, id, iw_replace, link_text) {
+    activeResults = activeResults.replace(/\[\[(\w+\.?\w{0,12})>(.*?)\|(.*?)\]\]/gm, function (match, id, iw_replace, link_text) {
       if (iw_replace == 'oIWIKIocIWIKIc') iw_replace = link_text
 
       if ((iw_replace == 'oIWIKIo' + link_text.replace(/\s/, '%20') + 'cIWIKIc') || (iw_replace == link_text) || ReplaceLinkMatch(iw_replace, link_text)) {
@@ -1595,41 +1644,41 @@ function parse_wikitext (id) {
     })
   }
 
-  results = results.replace(/>.*?oIWIKIo(.*?)cIWIKIc/mg, '>' + '$1')
+  activeResults = activeResults.replace(/>.*?oIWIKIo(.*?)cIWIKIc/mg, '>' + '$1')
 
   if (HTMLParser_FORMAT_SPACE) {
     if (HTMLParser_COLSPAN) {
-      results = results.replace(/\s*([\|\^]+)((\W\W_FORMAT_SPACE_)+)/gm, function (match, pipes, format) {
+      activeResults = activeResults.replace(/\s*([\|\^]+)((\W\W_FORMAT_SPACE_)+)/gm, function (match, pipes, format) {
         format = format.replace(/_FORMAT_SPACE_/g, '')
         return (format + pipes)
       })
     }
-    results = results.replace(/&quot;/g, '"')
+    activeResults = activeResults.replace(/&quot;/g, '"')
     var regex = new RegExp(HTMLParser_FORMAT_SPACE + '([\\-]{2,})', 'g')
-    results = results.replace(regex, ' $1')
+    activeResults = activeResults.replace(regex, ' $1')
 
-    results = results.replace(/\]\](\*\*|\/\/|\'\'|__|<\/del>)_FORMAT_SPACE_/, ']]$1@@_SP_@@')
+    activeResults = activeResults.replace(/\]\](\*\*|\/\/|\'\'|__|<\/del>)_FORMAT_SPACE_/, ']]$1@@_SP_@@')
 
     var regex = new RegExp("(&amp;|\\W|\\w|\\d)(\\*\\*|\\/\\/|\\'\\'|__|<\/del>)+" + HTMLParser_FORMAT_SPACE + '(\\w|\\d)', 'g')
-    results = results.replace(regex, '$1$2$3')
+    activeResults = activeResults.replace(regex, '$1$2$3')
 
     var regex = new RegExp(HTMLParser_FORMAT_SPACE + '@@_SP_@@', 'g')
-    results = results.replace(regex, ' ')
+    activeResults = activeResults.replace(regex, ' ')
 
         // spacing around entities with double format characters
-    results = results.replace(/([\*\/_]{2})@@_SP_@@(&\w+;)/g, '$1 $2')
+    activeResults = activeResults.replace(/([\*\/_]{2})@@_SP_@@(&\w+;)/g, '$1 $2')
 
-    results = results.replace(/\n@@_SP_@@\n/g, '')
-    results = results.replace(/@@_SP_@@\n/g, '')
-    results = results.replace(/@@_SP_@@/g, ' ')
+    activeResults = activeResults.replace(/\n@@_SP_@@\n/g, '')
+    activeResults = activeResults.replace(/@@_SP_@@\n/g, '')
+    activeResults = activeResults.replace(/@@_SP_@@/g, ' ')
     var regex = new RegExp(HTMLParser_FORMAT_SPACE + '([^\\)\\]\\}\\{\\-\\.,;:\\!\?"\x94\x92\u201D\u2019' + "'" + '])', 'g')
-    results = results.replace(regex, ' $1')
+    activeResults = activeResults.replace(regex, ' $1')
     regex = new RegExp(HTMLParser_FORMAT_SPACE, 'g')
-    results = results.replace(regex, '')
+    activeResults = activeResults.replace(regex, '')
 
     if (HTMLFormatInList) {
             /* removes extra newlines from lists */
-      results = results.replace(/(\s+[\-\*_]\s*)([\*\/_\']{2})(.*?)(\2)([^\n]*)\n+/gm,
+      activeResults = activeResults.replace(/(\s+[\-\*_]\s*)([\*\/_\']{2})(.*?)(\2)([^\n]*)\n+/gm,
                 function (match, list_type, format, text, list_type_close, rest) {
                   return (list_type + format + text + list_type_close + rest + '\n')
                 })
@@ -1638,7 +1687,7 @@ function parse_wikitext (id) {
 
     /* fix for links in lists, at ends of lines, which cause loss of line-feeds */
   if (HTMLLinkInList) {
-    results = results.replace(/(\]\]|\}\})(\s+)(\*|-)/mg,
+    activeResults = activeResults.replace(/(\]\]|\}\})(\s+)(\*|-)/mg,
             function (match, link, spaces, type) {
               spaces = spaces.replace(/\n/, '')
               return (link + '\n' + spaces + type)
@@ -1647,34 +1696,34 @@ function parse_wikitext (id) {
 
   var line_break_final = '\\\\'
   if (HTMLParser_LBR) {
-    results = results.replace(/(L_BR_K)+/g, line_break_final)
-    results = results.replace(/L_BR_K/gm, line_break_final)
-    results = results.replace(/(\\\\)\s+/gm, '$1 \n')
+    activeResults = activeResults.replace(/(L_BR_K)+/g, line_break_final)
+    activeResults = activeResults.replace(/L_BR_K/gm, line_break_final)
+    activeResults = activeResults.replace(/(\\\\)\s+/gm, '$1 \n')
   }
 
   if (HTMLParser_PRE) {
-    results = results.replace(/\s+<\/(code|file)>/g, '\n</' + '$1' + '>')
+    activeResults = activeResults.replace(/\s+<\/(code|file)>/g, '\n</' + '$1' + '>')
     if (HTMLParser_Geshi) {
-      results = results.replace(/\s+;/mg, ';')
-      results = results.replace(/&lt;\s+/mg, '<')
-      results = results.replace(/\s+&gt;/mg, '>')
+      activeResults = activeResults.replace(/\s+;/mg, ';')
+      activeResults = activeResults.replace(/&lt;\s+/mg, '<')
+      activeResults = activeResults.replace(/\s+&gt;/mg, '>')
     }
   }
 
   if (HTMLParser_TABLE) {
-    results += '\n' + line_break_final + '\n'
+    activeResults += '\n' + line_break_final + '\n'
     var regex = new RegExp(HTMLParserParaInsert, 'g')
-    results = results.replace(regex, ' ' + line_break_final + ' ')
+    activeResults = activeResults.replace(regex, line_break_final + ' ')
 
-        // fix for colspans which have had text formatting which cause extra empty cells to be created
-    results = results.replace(/(\||\^)[ ]+(\||\^)\s$/g, '$1\n')
-    results = results.replace(/(\||\^)[ ]+(\||\^)/g, '$1')
+    // fix for colspans which have had text formatting which cause extra empty cells to be created
+    activeResults = activeResults.replace(/(\||\^)[ ]+(\||\^)\s$/g, '$1\n')
+    activeResults = activeResults.replace(/(\||\^)[ ]+(\||\^)/g, '$1')
   }
     // prevents valid empty td/th cells from being removed above
-  results = results.replace(/_FCKG_BLANK_TD_/g, ' ')
+  activeResults = activeResults.replace(/_FCKG_BLANK_TD_/g, ' ')
 
   if (HTMLParserOpenAngleBracket) {
-    results = results.replace(/\/\/&lt;\/\/\s*/g, '&lt;')
+    activeResults = activeResults.replace(/\/\/&lt;\/\/\s*/g, '&lt;')
   }
 
   if (HTMLParserFont)   // HTMLParserFont start
@@ -1711,7 +1760,7 @@ function parse_wikitext (id) {
       )
     }
     if (HTMLParserFontInfix) {
-      results = results.replace(/<\/font>\s{1}/gm, '</font>')
+      activeResults = activeResults.replace(/<\/font>\s{1}/gm, '</font>')
     }
 
     if (fontConflict()) {
@@ -1721,16 +1770,16 @@ function parse_wikitext (id) {
         jQuery('#dw__editform').append('<input type="hidden" id="fontdel" name="fontdel" value="del" />')
       }
     }
-    results = results.font_link_reconcile(1)
-    results = results.font_link_reconcile(2)
+    activeResults = activeResults.font_link_reconcile(1)
+    activeResults = activeResults.font_link_reconcile(2)
 
     var regex = /\>\s+(\*\*|__|\/\/|'')\s+_\s+\1\s+<\/font>/gm
-    results = results.replace(regex, function (m) {
+    activeResults = activeResults.replace(regex, function (m) {
       m = m.replace(/\s+/g, '')
       return m
     })
 
-    results = results.replace(/\[\[(.*?)\|(<font[^\>]+>)(.*?)(<\/font>)\s*(\]\])\s*/gm, function (match, a, b, c) {
+    activeResults = activeResults.replace(/\[\[(.*?)\|(<font[^\>]+>)(.*?)(<\/font>)\s*(\]\])\s*/gm, function (match, a, b, c) {
       match = '[[' + a + '|' + c + ']]'
       var v = jQuery('#fontdel').val()
       if (!v) {
@@ -1739,7 +1788,7 @@ function parse_wikitext (id) {
       return match
     })
 
-    results = results.replace(/(\s*={2,})\s*(.*?)(<font[^\>]+>)(.*?)(<\/font>)(.*?)\s*\1/gm, function (match) {
+    activeResults = activeResults.replace(/(\s*={2,})\s*(.*?)(<font[^\>]+>)(.*?)(<\/font>)(.*?)\s*\1/gm, function (match) {
       match = match.replace(/<\/font>/g, ' ')
       match = match.replace(/<font.*?>/g, ' ')
       var v = jQuery('#formatdel').val()
@@ -1751,16 +1800,16 @@ function parse_wikitext (id) {
   }  // HTMLParserFont end
 
   if (HTMLParserTopNotes.length) {
-    results = results.replace(/<sup>\(\(\){2,}\s*<\/sup>/g, '')
-    results = results.replace(/\(\(+(\d+)\)\)+/, '(($1))')
+    activeResults = activeResults.replace(/<sup>\(\(\){2,}\s*<\/sup>/g, '')
+    activeResults = activeResults.replace(/\(\(+(\d+)\)\)+/, '(($1))')
     for (var i in HTMLParserBottomNotes) {  // re-insert DW's bottom notes at text level
       var matches = i.match(/_(\d+)/)
       var pattern = new RegExp('(\<sup\>)*[\(]+' + matches[1] + '[\)]+(<\/sup>)*')
       HTMLParserBottomNotes[i] = HTMLParserBottomNotes[i].replace(/(\d+)_FN_PAREN_C_/, '')
-      results = results.replace(pattern, '((' + HTMLParserBottomNotes[i].replace(/_FN_PAREN_C_/g, ') ') + '))')
+      activeResults = activeResults.replace(pattern, '((' + HTMLParserBottomNotes[i].replace(/_FN_PAREN_C_/g, ') ') + '))')
     }
-    results = results.replace(/<sup><\/sup>/g, '')
-    results = results.replace(/((<sup>\(\(\d+\)\)\)?<\/sup>))/mg, function (fn) {
+    activeResults = activeResults.replace(/<sup><\/sup>/g, '')
+    activeResults = activeResults.replace(/((<sup>\(\(\d+\)\)\)?<\/sup>))/mg, function (fn) {
       if (!fn.match(/p>\(\(\d+/)) {
         return ''
       }
@@ -1769,16 +1818,16 @@ function parse_wikitext (id) {
         )
   }
 
-  results = results.replace(/(={3,}.*?)(\{\{.*?\}\})(.*?={3,})/g, '$1$3\n\n$2')
+  activeResults = activeResults.replace(/(={3,}.*?)(\{\{.*?\}\})(.*?={3,})/g, '$1$3\n\n$2')
     // remove any empty footnote markup left after section re-edits
-  results = results.replace(/(<sup>)*\s*\[\[\s*\]\]\s*(<\/sup>)*\n*/g, '')
+  activeResults = activeResults.replace(/(<sup>)*\s*\[\[\s*\]\]\s*(<\/sup>)*\n*/g, '')
     // remove piled up sups with ((notes))
 
-  results = results.replace(/<sup>\s*\(\(\d+\)\)\s*<\/sup>/mg, '')
+  activeResults = activeResults.replace(/<sup>\s*\(\(\d+\)\)\s*<\/sup>/mg, '')
 
   if (HTMLParser_MULTI_LINE_PLUGIN) {
-    results = results.replace(/<\s+/g, '<')
-    results = results.replace(/&lt;\s+/g, '<')
+    activeResults = activeResults.replace(/<\s+/g, '<')
+    activeResults = activeResults.replace(/&lt;\s+/g, '<')
   }
 
   if (HTMLParser_NOWIKI) {
@@ -1788,37 +1837,37 @@ function parse_wikitext (id) {
     var nowiki_escapes = '%'  // this technique allows for added chars to attach to NOWIKI_$1_
     var regex = new RegExp('([' + nowiki_escapes + '])', 'g')
 
-    results = results.replace(/(&lt;nowiki&gt;)(.*?)(&lt;\/nowiki&gt;)/mg,
+    activeResults = activeResults.replace(/(&lt;nowiki&gt;)(.*?)(&lt;\/nowiki&gt;)/mg,
             function (all, start, mid, close) {
               mid = mid.replace(/%%(.)%%/mg, 'NOWIKI_$1_')
               return start + mid.replace(regex, 'NOWIKI_$1_') + close
             })
   }
 
-  results = results.replace(/__SWF__(\s*)\[*/g, '{{$1')
-  results = results.replace(/\|.*?\]*(\s*)__FWS__/g, '$1}}')
-  results = results.replace(/(\s*)__FWS__/g, '$1}}')
-  results = results.replace(/\n{3,}/g, '\n\n')
-  results = results.replace(/_LIST_EOFL_/gm, ' ' + line_break_final + ' ')
+  activeResults = activeResults.replace(/__SWF__(\s*)\[*/g, '{{$1')
+  activeResults = activeResults.replace(/\|.*?\]*(\s*)__FWS__/g, '$1}}')
+  activeResults = activeResults.replace(/(\s*)__FWS__/g, '$1}}')
+  activeResults = activeResults.replace(/\n{3,}/g, '\n\n')
+  activeResults = activeResults.replace(/_LIST_EOFL_/gm, ' ' + line_break_final + ' ')
 
   if (useComplexTables) {
-    if (results.indexOf('~~COMPLEX_TABLES~~') == -1) {
-      results += '~~COMPLEX_TABLES~~\n'
+    if (activeResults.indexOf('~~COMPLEX_TABLES~~') == -1) {
+      activeResults += '~~COMPLEX_TABLES~~\n'
     }
   }
-  if (!useComplexTables) { results = results.replace(/~~COMPLEX_TABLES~~/gm, '') }
-  results = results.replace(/_CKG_ASTERISK_/gm, '*')
-  results = results.replace(/_ESC_BKSLASH_/g, '\\')
-  results = results.replace(/divalNLine/gm, '\n')
+  if (!useComplexTables) { activeResults = activeResults.replace(/~~COMPLEX_TABLES~~/gm, '') }
+  activeResults = activeResults.replace(/_CKG_ASTERISK_/gm, '*')
+  activeResults = activeResults.replace(/_ESC_BKSLASH_/g, '\\')
+  activeResults = activeResults.replace(/divalNLine/gm, '\n')
   if (id == 'test') {
-    if (HTMLParser_test_result(results)) {
-      alert(results)
+    if (HTMLParser_test_result(activeResults)) {
+      alert(activeResults)
     }
     return
   }
 
   var dwform = GetE('dw__editform')
-  dwform.elements.fck_wikitext.value = results
+  dwform.elements.fck_wikitext.value = activeResults
 
   if (id == 'bakup') {
     return
