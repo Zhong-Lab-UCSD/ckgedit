@@ -1,76 +1,83 @@
 <?php
-if(!defined('DOKU_INC')) define('DOKU_INC',realpath(dirname(__FILE__).'/../../../').'/');
-if(!defined('DOKU_PLUGIN')) define('DOKU_PLUGIN',DOKU_INC.'lib/plugins/');
+if (!defined('DOKU_INC')) {
+    define('DOKU_INC', realpath(dirname(__FILE__).'/../../../').'/');
+}
+if (!defined('DOKU_PLUGIN')) {
+    define('DOKU_PLUGIN', DOKU_INC.'lib/plugins/');
+}
 require_once(DOKU_PLUGIN.'action.php');
 
 
 /**
  * @license    GNU GPLv2 version 2 or later (http://www.gnu.org/licenses/gpl.html)
- * 
- * class       plugin_ckgedit_edit 
+ *
+ * class       plugin_ckgedit_edit
  * @author     Myron Turner <turnermm02@shaw.ca>
  */
 
-class action_plugin_ckgedit_edit extends DokuWiki_Action_Plugin {
-    
-    var $fck_location = "ckeditor";
-    var $helper = false;
-    var $ckgedit_bak_file = "";
-    var $debug = false;
-    var $test = false;
-    var $page_from_template;
-    var $draft_found = false;
-    var $draft_text;
-    var $draft_started;
-    var $captcha;
+class action_plugin_ckgedit_edit extends DokuWiki_Action_Plugin
+{
+    public $fck_location = "ckeditor";
+    public $helper = false;
+    public $ckgedit_bak_file = "";
+    public $debug = false;
+    public $test = false;
+    public $page_from_template;
+    public $draft_found = false;
+    public $draft_text;
+    public $draft_started;
+    public $captcha;
     /**
      * Constructor
      */
-    function __construct()
+    public function __construct()
     {
         $this->setupLocale();
         $this->helper = plugin_load('helper', 'ckgedit');
-        if(!plugin_isdisabled('captcha')) {
+        if (!plugin_isdisabled('captcha')) {
             $this->captcha = plugin_load('helper', 'captcha');
-            if(!$this->captcha) $this->captcha = false; 
+            if (!$this->captcha) {
+                $this->captcha = false;
+            }
+        } else {
+            $this->captcha  = false;
         }
-        else  $this->captcha  = false;
-
     }
 
 
-    function register(Doku_Event_Handler $controller)
+    public function register(Doku_Event_Handler $controller)
     {
         $version = explode('.', phpversion());
         define('PHP_VERSION_NUM', $version[0] * 10+ $version[1]);
         
-        if($this->helper->is_outOfScope()) return;
+        if ($this->helper->is_outOfScope()) {
+            return;
+        }
  
         global $FCKG_show_preview;
         $FCKG_show_preview = true;
 
-        if(isset($_REQUEST['mode']) && $_REQUEST['mode'] == 'dwiki') {
+        if (isset($_REQUEST['mode']) && $_REQUEST['mode'] == 'dwiki') {
             $FCKG_show_preview = true;
             return;
-        }
-        elseif(isset($_COOKIE['FCKG_USE'])) {
-            preg_match('/_\w+_/',  $_COOKIE['FCKG_USE'], $matches);
-            if($matches[0] == '_false_') {
-                $FCKG_show_preview = true;     
+        } elseif (isset($_COOKIE['FCKG_USE'])) {
+            preg_match('/_\w+_/', $_COOKIE['FCKG_USE'], $matches);
+            if ($matches[0] == '_false_') {
+                $FCKG_show_preview = true;
                 return;
             }
         }
-        $Fck_NmSp = "!!NONSET!!"; 
-        if(isset($_COOKIE['FCK_NmSp'])) {
+        $Fck_NmSp = "!!NONSET!!";
+        if (isset($_COOKIE['FCK_NmSp'])) {
             $Fck_NmSp = $_COOKIE['FCK_NmSp'];
         }
         $dwedit_ns = @$this->getConf('dwedit_ns');
-        if(isset($dwedit_ns) && $dwedit_ns) {
-            $ns_choices = explode(',',$dwedit_ns);
-            foreach($ns_choices as $ns) {
+        if (isset($dwedit_ns) && $dwedit_ns) {
+            $ns_choices = explode(',', $dwedit_ns);
+            foreach ($ns_choices as $ns) {
                 $ns = trim($ns);
-                if(preg_match("/$ns/",$_REQUEST['id']) || preg_match("/$ns/",$Fck_NmSp)) {
-                    $FCKG_show_preview = true;     
+                if (preg_match("/$ns/", $_REQUEST['id']) || preg_match("/$ns/", $Fck_NmSp)) {
+                    $FCKG_show_preview = true;
                     return;
                 }
             }
@@ -85,47 +92,48 @@ class action_plugin_ckgedit_edit extends DokuWiki_Action_Plugin {
     /**
      * function pagefromtemplate
      * Capture template text output by Template Event handler instead of pageTemplate()
- 	 * @author  Myron Turner <turnermm02@shaw.ca>     
-     *               
+     * @author  Myron Turner <turnermm02@shaw.ca>
+     *
      */
-    function pagefromtemplate(Doku_Event $event) {
-        if($event->data['tpl']) { 
-            $this->page_from_template = $event->data['tpl']; 
+    public function pagefromtemplate(Doku_Event $event)
+    {
+        if ($event->data['tpl']) {
+            $this->page_from_template = $event->data['tpl'];
         }
     }
 
     /**
-     * ckgedit_edit_meta 
+     * ckgedit_edit_meta
      *
      * load fck js
      * @author Pierre Spring <pierre.spring@liip.ch>
-    * @author Myron Turner <turnermm03@shaw.ca>     
-     * @param mixed $event 
+    * @author Myron Turner <turnermm03@shaw.ca>
+     * @param mixed $event
      * @access public
      * @return void
      */
-    function ckgedit_edit_meta(Doku_Event $event)
+    public function ckgedit_edit_meta(Doku_Event $event)
     {
         global $ACT;
         // we only change the edit behaviour
-        if ($ACT != 'edit'){
+        if ($ACT != 'edit') {
             return;
         }
         global $ID;
         global $REV;
         global $INFO;
 
-        $event->data['script'][] = 
-            array( 
-                'type'=>'text/javascript', 
-                'charset'=>'utf-8', 
+        $event->data['script'][] =
+            array(
+                'type'=>'text/javascript',
+                'charset'=>'utf-8',
                 '_data'=>'',
                  'src'=>DOKU_BASE.'lib/plugins/ckgedit/' .$this->fck_location. '/ckeditor.js'
             );
 
-        $ua = strtolower ($_SERVER['HTTP_USER_AGENT']);
-        if(strpos($ua, 'msie') !== false) {
-            echo "\n" . '<meta http-equiv="X-UA-Compatible" content="IE=EmulateIE8" />' ."\n";     
+        $ua = strtolower($_SERVER['HTTP_USER_AGENT']);
+        if (strpos($ua, 'msie') !== false) {
+            echo "\n" . '<meta http-equiv="X-UA-Compatible" content="IE=EmulateIE8" />' ."\n";
         }
         
         return;
@@ -140,9 +148,8 @@ class action_plugin_ckgedit_edit extends DokuWiki_Action_Plugin {
      * @access public
      * @return void
      */
-    function ckgedit_edit(Doku_Event $event)
+    public function ckgedit_edit(Doku_Event $event)
     {
-  
         global $INFO;
 
         // we only change the edit behaviour
@@ -150,7 +157,7 @@ class action_plugin_ckgedit_edit extends DokuWiki_Action_Plugin {
             return;
         }
         // load xml and acl
-        if (!$this->_preprocess()){
+        if (!$this->_preprocess()) {
             return;
         }
         // print out the edit screen
@@ -161,11 +168,11 @@ class action_plugin_ckgedit_edit extends DokuWiki_Action_Plugin {
         $event->stopPropagation();
     }
     
-   /**
-    * function _preprocess
-	* @author  Myron Turner <turnermm02@shaw.ca>
-    */
-    function _preprocess($draft_text = "")
+    /**
+     * function _preprocess
+     * @author  Myron Turner <turnermm02@shaw.ca>
+     */
+    public function _preprocess($draft_text = "")
     {
         global $ID;
         global $REV;
@@ -177,30 +184,33 @@ class action_plugin_ckgedit_edit extends DokuWiki_Action_Plugin {
         global $SUM;
         global $lang;
         global $conf;
-        global $ckgedit_lang; 
+        global $ckgedit_lang;
         //set summary default
-        if(!$SUM){
-            if($REV){
+        if (!$SUM) {
+            if ($REV) {
                 $SUM = $lang['restored'];
-            }elseif(!$INFO['exists']){
+            } elseif (!$INFO['exists']) {
                 $SUM = $lang['created'];
             }
         }
-        if(!$draft_text) {
-            if($INFO['exists']){
-                if($RANGE){
-                    list($PRE,$text,$SUF) = rawWikiSlices($RANGE,$ID,$REV);
-                }else{
-                    $text = rawWiki($ID,$REV);
+        if (!$draft_text) {
+            if ($INFO['exists']) {
+                if ($RANGE) {
+                    list($PRE, $text, $SUF) = rawWikiSlices($RANGE, $ID, $REV);
+                } else {
+                    $text = rawWiki($ID, $REV);
                 }
-            }else{
+            } else {
                 //try to load a pagetemplate
-                 $text = pageTemplate($ID);
+                $text = pageTemplate($ID);
                 //Check for text from template event handler
-                 if(!$text && $this->page_from_template) $text = $this->page_from_template;
+                if (!$text && $this->page_from_template) {
+                    $text = $this->page_from_template;
+                }
             }
+        } else {
+            $text = $draft_text;
         }
-        else $text = $draft_text;
             
         $text = preg_replace_callback(
             '/(~~NOCACHE~~|~~NOTOC~~|\{\{rss>http:\/\/.*?\}\})/ms',
@@ -210,35 +220,39 @@ class action_plugin_ckgedit_edit extends DokuWiki_Action_Plugin {
                 $matches[0] = str_replace("{{rss>http://", "{ { rss>Feed:",  $matches[0]);
                 $matches[0] = str_replace("~", "~ ",  $matches[0]);
                 return $matches[0];'
-            ),$text);
-        if($this->getConf('smiley_hack')) {
+            ),
+            $text
+        );
+        if ($this->getConf('smiley_hack')) {
             $new_addr = $_SERVER['SERVER_NAME'] . DOKU_BASE;
-            $text=preg_replace("#(?<=http://)(.*?)(?=lib/plugins/ckgedit/ckeditor/plugins/smiley/images)#s", $new_addr,$text);        
+            $text=preg_replace("#(?<=http://)(.*?)(?=lib/plugins/ckgedit/ckeditor/plugins/smiley/images)#s", $new_addr, $text);
         }
 
-        $text = preg_replace_callback('/\[\[\w+>.*?\]\]/ms',
+        $text = preg_replace_callback(
+            '/\[\[\w+>.*?\]\]/ms',
             create_function(
                 '$matches',
                 'return str_replace("/", "__IWIKI_FSLASH__" ,$matches[0]);'
-            ), $text);
+            ),
+            $text
+        );
     
         global $useComplexTables;
-        if($this->getConf('complex_tables') || strrpos($text, '~~COMPLEX_TABLES~~') !== false) {     
+        if ($this->getConf('complex_tables') || strrpos($text, '~~COMPLEX_TABLES~~') !== false) {
             $useComplexTables=true;
-        }
-        else {
+        } else {
             $useComplexTables=false;
         }
       
-        if(strpos($text, '%%') !== false || strpos($text, '\\\\') !== false || strpos($text, '|') !== false ) {  
-            $text = preg_replace('/%%\s*<nowiki>\s*%%/ms', 'PERCNWPERC',$text);
-            $text = preg_replace('/%%\s*<(code|file)>\s*%%/ms', 'PERC' . "$1" . 'PERC',$text);
+        if (strpos($text, '%%') !== false || strpos($text, '\\\\') !== false || strpos($text, '|') !== false) {
+            $text = preg_replace('/%%\s*<nowiki>\s*%%/ms', 'PERCNWPERC', $text);
+            $text = preg_replace('/%%\s*<(code|file)>\s*%%/ms', 'PERC' . "$1" . 'PERC', $text);
             $text = preg_replace_callback(
                 "/<(nowiki|code|file)>(.*?)<\/(nowiki|code|file)/ms",
                 function ($matches) {
-                    $matches[0] = str_replace('%%', 'DBLPERCENT',$matches[0]);
-                    $matches[0] =  str_replace('\\ ', 'DBLBACKSPLASH',$matches[0]);
-                    $matches[0] =  str_replace('|', 'NWPIPECHARACTER',$matches[0]);                
+                    $matches[0] = str_replace('%%', 'DBLPERCENT', $matches[0]);
+                    $matches[0] =  str_replace('\\ ', 'DBLBACKSPLASH', $matches[0]);
+                    $matches[0] =  str_replace('|', 'NWPIPECHARACTER', $matches[0]);
                     return $matches[0];
                 },
                 $text
@@ -246,26 +260,26 @@ class action_plugin_ckgedit_edit extends DokuWiki_Action_Plugin {
 
             $text = preg_replace_callback(
                 "/(?<!nowiki>)%%(.*?)%%/ms",
-                function($matches) {
+                function ($matches) {
                     return '<nowiki>' . $matches[1] . '</nowiki>';
                 },
                 $text
             );
 
-            $text =  str_replace('DBLPERCENT','%%',$text);    
+            $text =  str_replace('DBLPERCENT', '%%', $text);
         }
        
         $pos = strpos($text, '<');
 
-        if($pos !== false) {
+        if ($pos !== false) {
 
             /* skipentity support */
             $text = preg_replace_callback(
                 '/``(.*?)``/ms',
-                function($matches) {          
-                    $needles =  array('[',']', '/',  '.', '*', '_','\'','<','>','%', '{', '}', '\\' , '(' );                          
-                    $replacements = array('&#91;','&#93;','&#47;', '&#46;', '&#42;', '&#95;', '&#39;', '&#60;','&#62;','&#37;', '&#123;','&#125;', '&#92;','&#40;');                       
-                    $matches[1] = str_replace($needles, $replacements, $matches[1]); 
+                function ($matches) {
+                    $needles =  array('[',']', '/',  '.', '*', '_','\'','<','>','%', '{', '}', '\\' , '(' );
+                    $replacements = array('&#91;','&#93;','&#47;', '&#46;', '&#42;', '&#95;', '&#39;', '&#60;','&#62;','&#37;', '&#123;','&#125;', '&#92;','&#40;');
+                    $matches[1] = str_replace($needles, $replacements, $matches[1]);
                     return '&grave;&grave;' .$matches[1] .'&grave;&grave;' ;
                 },
                 $text
@@ -273,21 +287,21 @@ class action_plugin_ckgedit_edit extends DokuWiki_Action_Plugin {
       
 
             $text = preg_replace_callback(
-                '/(<nowiki>)(.*?)(<\/nowiki>)/ms',          
+                '/(<nowiki>)(.*?)(<\/nowiki>)/ms',
                 create_function(
-                    '$matches',         
+                    '$matches',
                     '$needles =  array("[","]", "/",  ".", "*", "_","\'","<",">","%", "{", "}", "\\\","(");
                     $replacements = array("&#91;","&#93;","&#47;", "&#46;", "&#42;", "&#95;", "&#39;", "&#60;","&#62;","&#37;", "&#123;","&#125;", "&#92;","&#40;"); 
                     $matches[2] = str_replace($needles, $replacements, $matches[2]);
-                    return  $matches[1] . $matches[2] . $matches[3];'            
+                    return  $matches[1] . $matches[2] . $matches[3];'
                 ),
                 $text
-            );               
+            );
 
             $text = preg_replace_callback(
                 '/<(code|file)(.*?)(>)(.*?)(<\/\1>)/ms',
                 create_function(
-                    '$matches',         
+                    '$matches',
                     ' //file_put_contents("geshi.txt", print_r($matches,true));
                     if(preg_match("/(^\s*geshi:\s*(\w+)(\s+\w+\.\w+)*\s*)$/m",$matches[0],$gmatch)){
                         $gmatch[0] = preg_replace("/\s*geshi:\s+/","",$gmatch[0]);                    
@@ -314,7 +328,7 @@ class action_plugin_ckgedit_edit extends DokuWiki_Action_Plugin {
                         $matches[4] = preg_replace("/(?<!\s)>/ms", $close, $matches[4]);                    
                     }
                     $matches[4] = str_replace("\"", "__GESHI_QUOT__", $matches[4]);     
-                    return "<" . $matches[1] . $matches[2] . $matches[3] . $matches[4] . $matches[5];'            
+                    return "<" . $matches[1] . $matches[2] . $matches[3] . $matches[4] . $matches[5];'
                 ),
                 $text
             );
@@ -325,29 +339,32 @@ class action_plugin_ckgedit_edit extends DokuWiki_Action_Plugin {
                     '$matches',
                     '$matches[0] = str_replace("_ckgedit_NPBBR_","",$matches[0]);
                     return $matches[0];'
-                ),$text);    
+                ),
+                $text
+            );
             
             $text = preg_replace_callback(
                 '/(\|\s*)(<code>|<file>)(.*?)(<\/code>|<\/file>)\n_ckgedit_NPBBR_(?=.*?\|)/ms',
                 create_function(
-                    '$matches',         
+                    '$matches',
                     '$matches[2] = preg_replace("/<code>/ms", "TPRE_CODE", $matches[2]); 
                     $matches[2] = preg_replace("/<file>/ms", "TPRE_FILE", $matches[2]);    
                     $matches[4] = "TPRE_CLOSE";                    
                     $matches[3] = preg_replace("/^\n+/", "TC_NL",$matches[3]);  
                     $matches[3] = preg_replace("/\n/ms", "TC_NL",$matches[3]);                                   
-                    return $matches[1] . $matches[2] .  trim($matches[3]) .   $matches[4];'            
+                    return $matches[1] . $matches[2] .  trim($matches[3]) .   $matches[4];'
                 ),
                 $text
             );
-            $text = preg_replace('/TPRE_CLOSE\s+/ms',"TPRE_CLOSE",$text); 
+            $text = preg_replace('/TPRE_CLOSE\s+/ms', "TPRE_CLOSE", $text);
         
-            $text = preg_replace('/<(?!code|file|del|sup|sub|wrap|block|inline\/\/|\s|\/del|\/code|\/file|\/sup|\/sub|\/wrap|\/block|\/inline)/msi',"&lt;",$text);
-            $text = str_replace('%%&lt;', '&#37;&#37;&#60;', $text);              
-        }  
+            $text = preg_replace('/<(?!code|file|del|sup|sub|wrap|block|inline\/\/|\s|\/del|\/code|\/file|\/sup|\/sub|\/wrap|\/block|\/inline)/msi', "&lt;", $text);
+            $text = str_replace('%%&lt;', '&#37;&#37;&#60;', $text);
+        }
        
-        if($this->getConf('duplicate_notes')) {
-			$text = preg_replace_callback('/\(\((.*?)\)\)/ms',
+        if ($this->getConf('duplicate_notes')) {
+            $text = preg_replace_callback(
+                '/\(\((.*?)\)\)/ms',
                 create_function(
                     '$matches',
                     'static $count = 0;
@@ -357,69 +374,72 @@ class action_plugin_ckgedit_edit extends DokuWiki_Action_Plugin {
                     $replacements = array("&#91;","&#93;","&#47;", "&#46;", "&#42;", "&#95;", "&#39;", "&#60;","&#62;","&#37;", "&#123;","&#125;", "&#92;","&#40;"); 
                     $matches[1] = str_replace($needles, $replacements, $matches[1]);                    
                     return "(($ins" . $matches[1] . "))" ;'
-                ), $text
-			);			 
-		}
-        $text = preg_replace('/^\>/ms',"_QUOT_",$text);  // dw quotes
-        $text = str_replace('>>','CHEVRONescC',$text);
-        $text = str_replace('<<','CHEVRONescO',$text);
-        $text = preg_replace('/(={3,}.*?)(\{\{.*?\}\})(.*?={3,})/',"$1$3\n$2",$text);
+                ),
+                $text
+            );
+        }
+        $text = preg_replace('/^\>/ms', "_QUOT_", $text);  // dw quotes
+        $text = str_replace('>>', 'CHEVRONescC', $text);
+        $text = str_replace('<<', 'CHEVRONescO', $text);
+        $text = preg_replace('/(={3,}.*?)(\{\{.*?\}\})(.*?={3,})/', "$1$3\n$2", $text);
         $email_regex = '/\/\/\<\/\/(.*?@.*?)>/';
-        $text = preg_replace($email_regex,"<$1>",$text);
+        $text = preg_replace($email_regex, "<$1>", $text);
 
-        $text = preg_replace('/{{(.*)\.swf(\s*)}}/ms',"__SWF__$1.swf$2__FWS__",$text);
-        $text = preg_replace('/PERCNWPERC/ms', '%%&lt; nowiki &gt;%%',$text);
+        $text = preg_replace('/{{(.*)\.swf(\s*)}}/ms', "__SWF__$1.swf$2__FWS__", $text);
+        $text = preg_replace('/PERCNWPERC/ms', '%%&lt; nowiki &gt;%%', $text);
         //$text = preg_replace('/%%\s*<(code|file)>\s*%%/ms', 'PERC' . "$1" . 'PERC',$text);
-        $text = preg_replace('/PERCcodePERC/ms','%%&lt;code&gt;%%', $text);
-        $text = preg_replace('/PERCfilePERC/ms','%%&lt;file&gt;%%', $text);
+        $text = preg_replace('/PERCcodePERC/ms', '%%&lt;code&gt;%%', $text);
+        $text = preg_replace('/PERCfilePERC/ms', '%%&lt;file&gt;%%', $text);
         $divalign = false;
-        if($this->helper->has_plugin('divalign2')
+        if ($this->helper->has_plugin('divalign2')
             ||$this->helper->has_plugin('divalign2_center')) {
             $divalign = true;
-            $text = preg_replace_callback('/\n([;#]{3})/',
-                function ($matches) {  
-                    return "divalNLine" . str_replace('#','CGEHASH',$matches[1]);
-                }, $text
+            $text = preg_replace_callback(
+                '/\n([;#]{3})/',
+                function ($matches) {
+                    return "divalNLine" . str_replace('#', 'CGEHASH', $matches[1]);
+                },
+                $text
             );
         }
         $this->xhtml = $this->_render_xhtml($text);
 
         $this->xhtml = str_replace("__IWIKI_FSLASH__", "&frasl;", $this->xhtml);
-        if($this->getConf('duplicate_notes')) {
-            $this->xhtml = preg_replace("/FNoteINSert\d+/ms", "",$this->xhtml);
+        if ($this->getConf('duplicate_notes')) {
+            $this->xhtml = preg_replace("/FNoteINSert\d+/ms", "", $this->xhtml);
         }
-        if($divalign) {
-            $this->xhtml = str_replace("CGEHASH", "#", $this->xhtml);           
-        }   
-        $this->xhtml = str_replace("__GESHI_QUOT__", '&#34;', $this->xhtml);        
-        $this->xhtml = str_replace("__GESHI_OPEN__", "&#60; ", $this->xhtml); 
-        $this->xhtml = str_replace('CHEVRONescC', '>>',$this->xhtml);
-        $this->xhtml = str_replace('CHEVRONescO', '<<',$this->xhtml);
-        $this->xhtml = preg_replace('/_QUOT_/ms','>',$this->xhtml);  // dw quotes     
-        $this->xhtml = str_replace("rss&gt;FEED", "rss>Feed:www.",$this->xhtml); 
+        if ($divalign) {
+            $this->xhtml = str_replace("CGEHASH", "#", $this->xhtml);
+        }
+        $this->xhtml = str_replace("__GESHI_QUOT__", '&#34;', $this->xhtml);
+        $this->xhtml = str_replace("__GESHI_OPEN__", "&#60; ", $this->xhtml);
+        $this->xhtml = str_replace('CHEVRONescC', '>>', $this->xhtml);
+        $this->xhtml = str_replace('CHEVRONescO', '<<', $this->xhtml);
+        $this->xhtml = preg_replace('/_QUOT_/ms', '>', $this->xhtml);  // dw quotes
+        $this->xhtml = str_replace("rss&gt;FEED", "rss>Feed:www.", $this->xhtml);
 
         $this->xhtml = preg_replace_callback(
             "/^(>+)(.*?)$/ms",
-            function($matches) {
-                $matches[2] = str_ireplace('<br/>',"",$matches[2]);
+            function ($matches) {
+                $matches[2] = str_ireplace('<br/>', "", $matches[2]);
                 return $matches[1] . $matches[2] . "<br />";
             },
             $this->xhtml
         );
       
-        if($pos !== false) {
+        if ($pos !== false) {
             $this->xhtml = preg_replace_callback(
                 '/(TPRE_CODE|TPRE_FILE)(.*?)(TPRE_CLOSE)/ms',
                 create_function(
-                    '$matches', 
+                    '$matches',
                     '$matches[1] = preg_replace("/TPRE_CODE/","<pre class=\'code\'>\n", $matches[1]);  
                     $matches[1] = preg_replace("/TPRE_FILE/","<pre class=\'file\'>\n", $matches[1]);  
                     $matches[2] = preg_replace("/TC_NL/ms", "\n", $matches[2]);  
                     $matches[3] = "</pre>";                    
-                    return $matches[1] . $matches[2] . $matches[3];'            
+                    return $matches[1] . $matches[2] . $matches[3];'
                 ),
                 $this->xhtml
-            ); 
+            );
         }
         $this->xhtml = preg_replace_callback(
             '/~~START_HTML_BLOCK~~[\n\s]*(.*?)CLOSE_HTML_BLOCK/ms',
@@ -436,14 +456,16 @@ class action_plugin_ckgedit_edit extends DokuWiki_Action_Plugin {
                     }
                 }
                 return "~~START_HTML_BLOCK~~" . implode("\n",$tmp) . "CLOSE_HTML_BLOCK"; '
-            ),$this->xhtml);
+            ),
+            $this->xhtml
+        );
         
         $this->xhtml = preg_replace_callback(
             '/(<pre)(.*?)(>)(.*?)(<\/pre>)/ms',
             create_function(
-                '$matches',                          
+                '$matches',
                 '$matches[4] = preg_replace("/(\||\^)[ ]+(\||\^)/ms","$1 &nbsp; $2" , $matches[4]);                    
-                return  $matches[1] . $matches[2] . $matches[3] . $matches[4] . $matches[5];'            
+                return  $matches[1] . $matches[2] . $matches[3] . $matches[4] . $matches[5];'
             ),
             $this->xhtml
         );
@@ -451,29 +473,34 @@ class action_plugin_ckgedit_edit extends DokuWiki_Action_Plugin {
         $this->xhtml = preg_replace_callback(
             '/~~MULTI_PLUGIN_OPEN~~(.*?)~~MULTI_PLUGIN_CLOSE~~/ms',
             create_function(
-                '$matches',                          
+                '$matches',
                 'return str_replace("&lt;", "< ",$matches[0]);'
             ),
             $this->xhtml
         );
     
-        if($this->draft_started) return $this->xhtml;
-        $cname = getCacheName($INFO['client'].$ID,'.draft.fckl');
+        if ($this->draft_started) {
+            return $this->xhtml;
+        }
+        $cname = getCacheName($INFO['client'].$ID, '.draft.fckl');
      
         $this->draft_started = false;
-        if(file_exists($cname)  && !$this->draft_started) {
-    
+        if (file_exists($cname)  && !$this->draft_started) {
             $this->draft_started = true;
             
-            $cdata =  unserialize(io_readFile($cname,false));
+            $cdata =  unserialize(io_readFile($cname, false));
             $prefix =  isset($cdata['prefix']) ? urldecode($cdata['prefix']) : "" ;
-            if($prefix) $prefix = $this-> _preprocess($prefix);
+            if ($prefix) {
+                $prefix = $this-> _preprocess($prefix);
+            }
             $text = urldecode($cdata['text']);
             $suffix = isset($cdata['suffix']) ? urldecode($cdata['suffix']) : "" ;
             
-            if($suffix) $suffix = $this-> _preprocess($suffix);
+            if ($suffix) {
+                $suffix = $this-> _preprocess($suffix);
+            }
         
-            preg_match_all("/<\/(.*?)\>/", $cdata['text'],$matches);
+            preg_match_all("/<\/(.*?)\>/", $cdata['text'], $matches);
             /* exclude drafts saved from preview mode */
             if (!in_array('code', $matches[1]) && !in_array('file', $matches[1]) && !in_array('nowiki', $matches[1])) {
                 //$this->draft_text = $cdata['text'];
@@ -482,30 +509,34 @@ class action_plugin_ckgedit_edit extends DokuWiki_Action_Plugin {
                 msg($this->getLang('draft_msg')) ;
             }
             unlink($cname);
-        }    
-        if($draft_started) return $this->xhtml;
+        }
+        if ($draft_started) {
+            return $this->xhtml;
+        }
         return true;
     }
 
-    /** 
+    /**
      * function dw_edit_displayed
      * @author  Myron Turner
      * determines whether or not to show  or hide the
      *  'DW Edit' button
      */
 
-    function dw_edit_displayed() 
-    { 
+    public function dw_edit_displayed()
+    {
         global $INFO;
 
         $dw_edit_display = @$this->getConf('dw_edit_display');
-        if(!isset($dw_edit_display))return "";  //version 0. 
-        if($dw_edit_display != 'all') {
+        if (!isset($dw_edit_display)) {
+            return "";
+        }  //version 0.
+        if ($dw_edit_display != 'all') {
             $admin_exclusion = false;
-            if($dw_edit_display == 'admin' && ($INFO['isadmin'] || $INFO['ismanager']) ) {    
+            if ($dw_edit_display == 'admin' && ($INFO['isadmin'] || $INFO['ismanager'])) {
                 $admin_exclusion = true;
             }
-            if($dw_edit_display == 'none' || $admin_exclusion === false) {
+            if ($dw_edit_display == 'none' || $admin_exclusion === false) {
                 return ' style = "display:none"; ';
             }
             return "";
@@ -516,8 +547,8 @@ class action_plugin_ckgedit_edit extends DokuWiki_Action_Plugin {
     /**
      * function _print
      * @author  Myron Turner
-     */ 
-    function _print()
+     */
+    public function _print()
     {
         global $INFO;
         global $lang;
@@ -529,41 +560,47 @@ class action_plugin_ckgedit_edit extends DokuWiki_Action_Plugin {
         global $SUF;
         global $SUM;
         $wr = $INFO['writable'];
-        if($wr){
-            if ($REV) print p_locale_xhtml('editrev');          
+        if ($wr) {
+            if ($REV) {
+                print p_locale_xhtml('editrev');
+            }
             $ro=false;
-        }else{
+        } else {
             // check pseudo action 'source'
-            if(!actionOK('source')){
-                msg('Command disabled: source',-1);
+            if (!actionOK('source')) {
+                msg('Command disabled: source', -1);
                 return false;
             }
             print p_locale_xhtml('read');
             $ro='readonly="readonly"';
         }
 
-        if(!$DATE) $DATE = $INFO['lastmod'];
+        if (!$DATE) {
+            $DATE = $INFO['lastmod'];
+        }
         $guest_toolbar = $this->getConf('guest_toolbar');
         $guest_media  = $this->getConf('guest_media');
-        if(!isset($INFO['userinfo']) && !$guest_toolbar) {  
-            $toolbar = "DokuwikiNoGuest";  
-        }
-        else if(!isset($INFO['userinfo']) && !$guest_media) {            
+        if (!isset($INFO['userinfo']) && !$guest_toolbar) {
+            $toolbar = "DokuwikiNoGuest";
+        } elseif (!isset($INFO['userinfo']) && !$guest_media) {
             $toolbar = "DokuwikiGuest";
+        } else {
+            $toolbar = 'Dokuwiki';
         }
-        else $toolbar = 'Dokuwiki';
             
         $height = isset($_COOKIE['ckgEdht']) && $_COOKIE['ckgEdht'] ? $_COOKIE['ckgEdht']: 250;
-        if(!is_numeric($height)) $height = 250;
+        if (!is_numeric($height)) {
+            $height = 250;
+        }
         $fbsz_increment = isset($_COOKIE['fbsz']) && $_COOKIE['fbsz'] ? $_COOKIE['fbsz'] : false;
         $fbrowser_width = 1070;
         $fbrowser_height = 660;
-        if($fbsz_increment) {
+        if ($fbsz_increment) {
             $fbrowser_width  = $fbrowser_width + ($fbrowser_width*($fbsz_increment/100));
             $fbrowser_height  =$fbrowser_height + ($fbrowser_height*($fbsz_increment/100));
         }
 
-        $doku_url=  rtrim(DOKU_URL,'/');        
+        $doku_url=  rtrim(DOKU_URL, '/');
         $ns = getNS($_COOKIE['FCK_NmSp']);
 
         //get user file browser if allowed
@@ -619,12 +656,11 @@ CKEDITOR_REPLACE;
 
         global $skip_styling;
             
-        if($this->page_from_template) {
-            $ckg_template = 'tpl';   
-        }
-        else $ckg_template ="";
-
- ?>
+        if ($this->page_from_template) {
+            $ckg_template = 'tpl';
+        } else {
+            $ckg_template ="";
+        } ?>
   <form id="dw__editform" method="post" action="<?php echo script()?>"  accept-charset="<?php echo $lang['encoding']?>">
     <div class="no">
       <input type="hidden" name="id"   value="<?php echo $ID?>" />
@@ -638,15 +674,14 @@ CKEDITOR_REPLACE;
       <input type="hidden" id="styling"  name="styling" value="styles" />
       <input type="hidden" id="template"  name="template`" value="<?php echo $ckg_template?>" />
       <?php
-        if(function_exists('formSecurityToken')) {
-            formSecurityToken();  
-        }
-      ?>
+        if (function_exists('formSecurityToken')) {
+            formSecurityToken();
+        } ?>
     </div>
 
     <textarea name="wikitext" id="wiki__text" <?php echo $ro?> cols="80" rows="10" class="edit" tabindex="1"><?php echo "\n".$this->xhtml?></textarea>
     
-<?php 
+<?php
 
         $temp=array();
         trigger_event('HTML_EDITFORM_INJECTION', $temp);
@@ -656,36 +691,43 @@ CKEDITOR_REPLACE;
         $guest_group = false;
         $guest_user = false;
 
-        if(isset($INFO['userinfo'])&& isset($INFO['userinfo']['grps'])) {
+        if (isset($INFO['userinfo'])&& isset($INFO['userinfo']['grps'])) {
             $user_groups = $INFO['userinfo']['grps'];
-            if(is_array($user_groups) && $user_groups) {  
-                foreach($user_groups as $group) { 
+            if (is_array($user_groups) && $user_groups) {
+                foreach ($user_groups as $group) {
                     if (strcasecmp('guest', $group) == 0) {
                         $guest_group = true;
                         break;
                     }
                 }
             }
-            if($INFO['client'] == 'guest') $guest_user = true; 
+            if ($INFO['client'] == 'guest') {
+                $guest_user = true;
+            }
         }
         $CAPTCHA_HIDE = "";
-        if(($guest_user || $guest_group) && $guest_perm <= 2) $DW_EDIT_disabled = 'disabled';
+        if (($guest_user || $guest_group) && $guest_perm <= 2) {
+            $DW_EDIT_disabled = 'disabled';
+        }
         global $USERINFO;
-        if(($guest_user || $guest_group ||!$USERINFO) && $guest_perm < 4 && $this->captcha && $this->captcha->isEnabled())  $CAPTCHA_HIDE = 'display: none;'; 
-        $DW_EDIT_hide = $this->dw_edit_displayed(); 
+        if (($guest_user || $guest_group ||!$USERINFO) && $guest_perm < 4 && $this->captcha && $this->captcha->isEnabled()) {
+            $CAPTCHA_HIDE = 'display: none;';
+        }
+        $DW_EDIT_hide = $this->dw_edit_displayed();
 
         $is_ckgeditChrome = false;
-        if(stripos($_SERVER['HTTP_USER_AGENT'],'Chrome') !== false) {
-            preg_match("/Chrome\/(\d+)/", $_SERVER['HTTP_USER_AGENT'],$cmatch);
-            if((int)$cmatch[1] <26)  $is_ckgeditChrome =true;    
-        } 
-
-?>
+        if (stripos($_SERVER['HTTP_USER_AGENT'], 'Chrome') !== false) {
+            preg_match("/Chrome\/(\d+)/", $_SERVER['HTTP_USER_AGENT'], $cmatch);
+            if ((int)$cmatch[1] <26) {
+                $is_ckgeditChrome =true;
+            }
+        } ?>
 
     <div id="wiki__editbar">
       <div id="size__ctl" style="display: none"></div>
       <?php
-        if($wr) {?>
+        if ($wr) {
+            ?>
          <div class="editButtons">
             <input type="checkbox" name="ckgedit" value="ckgedit" checked="checked" style="display: none"/>
              <input class="button" type="button" id = "save_button"
@@ -699,15 +741,15 @@ CKEDITOR_REPLACE;
                    <?php echo $DW_EDIT_disabled; ?>
                    name="do[delete]" value="<?php echo $lang['btn_delete']?>"
                    title="<?php echo $this->getLang('title_dw_delete') ?>"
-                   style = "font-size: 100%; <?php echo $CAPTCHA_HIDE;?>"
+                   style = "font-size: 100%; <?php echo $CAPTCHA_HIDE; ?>"
             />
 
             
-             <?php if(!$is_ckgeditChrome): ?> 
+             <?php if (!$is_ckgeditChrome): ?> 
              <input class="button"  id = "ebtn__dwedit"
                  <?php echo $DW_EDIT_disabled; ?>                 
                  <?php echo $DW_EDIT_hide; ?>
-                 style = "font-size: 100%;<?php echo $CAPTCHA_HIDE;?>"            
+                 style = "font-size: 100%;<?php echo $CAPTCHA_HIDE; ?>"            
                  type="submit" 
                  name="do[save]" 
                  value="<?php echo $this->getLang('btn_dw_edit')?>"  
@@ -715,7 +757,7 @@ CKEDITOR_REPLACE;
                   />
              <?php endif; ?>
 
-             <?php if($this->getConf('allow_ckg_filebrowser') == 'all'): ?>
+             <?php if ($this->getConf('allow_ckg_filebrowser') == 'all'): ?>
             <input class="button" id="ebtn__fbswitch"
                    style="font-size: 100%;"
                    type="submit"
@@ -729,12 +771,10 @@ CKEDITOR_REPLACE;
 
             $disabled = 'Disabled';
             $inline = $this->test ? 'inline' : 'none';
-            $chrome_dwedit_link =  '<a href="'.wl($INFO['id'],array('do'=>'show')).'" ' . 'onclick="draft_delete();setDWEditCookie(2);"class="action edit" rel="nofollow" title="DW Edit"><span>DW Edit</span></a>';
+            $chrome_dwedit_link =  '<a href="'.wl($INFO['id'], array('do'=>'show')).'" ' . 'onclick="draft_delete();setDWEditCookie(2);"class="action edit" rel="nofollow" title="DW Edit"><span>DW Edit</span></a>';
             $backup_btn =$this->getLang('dw_btn_backup') ? $this->getLang('dw_btn_backup') : $this->getLang('dw_btn_refresh');
-            $backup_title = $this->getLang('title_dw_backup') ? $this->getLang('title_dw_backup') : $this->getLang('title_dw_refresh');   
-            $using_scayt = ($this->getConf('scayt')) == 'on';
-  
-?>
+            $backup_title = $this->getLang('title_dw_backup') ? $this->getLang('title_dw_backup') : $this->getLang('title_dw_refresh');
+            $using_scayt = ($this->getConf('scayt')) == 'on'; ?>
             <input class="button" type="submit" 
                  name="do[draftdel]" 
                  id = "ebut_cancel"
@@ -752,8 +792,8 @@ CKEDITOR_REPLACE;
                   /> 
 
             <?php
-            if($this->draft_found) {
-            ?>
+            if ($this->draft_found) {
+                ?>
              <input class="button"       
                  style = "background-color: yellow"
                  id="ckgedit_draft_btn" 
@@ -762,7 +802,7 @@ CKEDITOR_REPLACE;
                   />
             <?php
             } else {
-            ?>
+                ?>
 
   
              <input class="button" type="button" 
@@ -779,36 +819,36 @@ CKEDITOR_REPLACE;
                    
                   />
             <?php
-                if(!$skip_styling) : ?>              
+                if (!$skip_styling) : ?>              
               <input class="button" type="submit"
                    name ="do[edit]" 
                    id = "no_styling_btn"                   
-                   style = "font-size: 100%;<?php echo $CAPTCHA_HIDE;?>"                   
+                   style = "font-size: 100%;<?php echo $CAPTCHA_HIDE; ?>"                   
                    value="<?php echo $this->getLang('dw_btn_styling')?>"  
                    title="<?php echo $this->getLang('title_styling')?>"  
                   />
             <?php
-                endif;
-            ?>                  
+                endif; ?>                  
              &nbsp;&nbsp;&nbsp;
 
-            <?php                  
-                if($is_ckgeditChrome) echo $chrome_dwedit_link;
-            ?>
+            <?php
+                if ($is_ckgeditChrome) {
+                    echo $chrome_dwedit_link;
+                } ?>
  <br />
 
             <?php
             }
-            if($this->debug) { ?>
+            if ($this->debug) {
+                ?>
          <input class="button" type="button" value = "Debug"
                    title="Debug"                     
                    onclick="HTMLParser_debug();"
                   /> 
 
             <br />
-            <?php 
-            }
-            ?>
+            <?php
+            } ?>
 
    <div id = "backup_msg" class="backup_msg" style=" display:none;">
      <table><tr><td class = "backup_msg_td">
@@ -821,18 +861,16 @@ CKEDITOR_REPLACE;
     </div>
             <?php
 
-            if(!isset($_COOKIE['ckgEdPaste'])) {
+            if (!isset($_COOKIE['ckgEdPaste'])) {
                 $paste_value = 'on';
-            }
-            else {
-                $paste_value = (isset($_COOKIE['ckgEdPaste']) && $_COOKIE['ckgEdPaste'] == 'off' )  ? 'on' : 'off';
-            }
-            ?>
+            } else {
+                $paste_value = (isset($_COOKIE['ckgEdPaste']) && $_COOKIE['ckgEdPaste'] == 'off')  ? 'on' : 'off';
+            } ?>
 
      <label class="nowrap" for="complex_tables" id="complex_tables_label">     
         <input type="checkbox" name="complex_tables" value="complex_tables"  id = "complex_tables" 
-                     /><span id='complex_tables_label_text'> <?php echo $this->getLang('complex_tables');?></span></label> 
-      &nbsp;&nbsp;<label class="nowrap" for="editor_height"><?php echo $this->getLang('editor_height');?></label> 
+                     /><span id='complex_tables_label_text'> <?php echo $this->getLang('complex_tables'); ?></span></label> 
+      &nbsp;&nbsp;<label class="nowrap" for="editor_height"><?php echo $this->getLang('editor_height'); ?></label> 
         <input type="text" size= "4" name="editor_height" title = "<?php echo $this->getLang('editor_height_title'); ?>" value="<?php echo $height?>"  id = "editor_height"  onchange="setEdHeight(this.value);" />  px    
     &nbsp;&nbsp;<label class="nowrap" for="ckg_img_paste" title ="<?php echo $this->getLang('ckg_img_paste_title'); ?>"> <?php echo $this->getLang('ckg_img_paste') . " ". $this->getLang($paste_value) ?></label> 
         &nbsp;<input type="checkbox" name="ckg_img_paste" title = "<?php echo $this->getLang('ckg_img_paste_title'); ?>"  
@@ -860,11 +898,11 @@ CKEDITOR_REPLACE;
                 <label class="nowrap" for="minoredit"><input type="checkbox" id="minoredit" name="minor" value="1" tabindex="3" /> <span><?php echo $this->getLang('minor_changes') ?></span></label>
             </div>
         <?php
-        }
-        ?>
+        } ?>
         <?php
-        if($this->captcha && $this->captcha->isEnabled()) echo $this->captcha->getHTML();
-        ?>
+        if ($this->captcha && $this->captcha->isEnabled()) {
+            echo $this->captcha->getHTML();
+        } ?>
     </div>
    </form>
 
@@ -873,8 +911,7 @@ CKEDITOR_REPLACE;
   <script type="text/javascript">
 //<![CDATA[
     <?php
-        echo 'var backup_empty = "' . $this->getLang('backup_empty') .'";';
-    ?>
+        echo 'var backup_empty = "' . $this->getLang('backup_empty') .'";'; ?>
         /* aspell_window removed, not supported */
     if(window.unsetDokuWikiLockTimer) window.unsetDokuWikiLockTimer();  
 
@@ -885,29 +922,26 @@ CKEDITOR_REPLACE;
 
     <?php
         global $useComplexTables;
-        if($useComplexTables) {
-    ?>               
+        if ($useComplexTables) {
+            ?>               
     document.getElementById('complex_tables').click();            
     <?php
         }
-        if($this->getConf('complex_tables')) {
-    ?>
+        if ($this->getConf('complex_tables')) {
+            ?>
     document.getElementById('complex_tables').disabled = true;
     document.getElementById('complex_tables_label').style = "display:none";
     document.getElementById('complex_tables_label_text').style = "display:none";
     <?php
         }
    
-        if(preg_match("/MISIE|Trident/",$_SERVER['HTTP_USER_AGENT'])) {
+        if (preg_match("/MISIE|Trident/", $_SERVER['HTTP_USER_AGENT'])) {
             echo "var isIE = true;";
-        }
-        else {
+        } else {
             echo "var isIE = false;";
         }
 
-        echo "var doku_base = '" . DOKU_BASE ."'"; 
-     
-    ?>  
+        echo "var doku_base = '" . DOKU_BASE ."'"; ?>  
           
     var ckgedit_draft_btn = "<?php echo $this->getLang('btn_exit_draft') ?>";
     var ckgedit_draft_btn_title = "<?php echo $this->getLang('title_exit_draft')?>";
@@ -933,22 +967,22 @@ CKEDITOR_REPLACE;
         if(oDokuWiki_FCKEditorInstance.dwiki_fnencode && oDokuWiki_FCKEditorInstance.dwiki_fnencode == 'safe') {
             <?php
         global $updateVersion;
-        if(!isset($updateVersion)) $updateVersion = 0;
-        echo "updateVersion=$updateVersion;";
-        $list = plugin_list('action');       
-        $safe_converted = false;
-        if(in_array( 'safefnrecode' , $list)) {
-            $safe_converted = true;          
+        if (!isset($updateVersion)) {
+            $updateVersion = 0;
         }
-            ?>
+        echo "updateVersion=$updateVersion;";
+        $list = plugin_list('action');
+        $safe_converted = false;
+        if (in_array('safefnrecode', $list)) {
+            $safe_converted = true;
+        } ?>
 
             if(value.match(/%25/ && value.match(/%25[a-z0-9]/))) {
                 value = value.replace(/%25/g,"%");
-                <?php                         
-        if($updateVersion > 30 || $safe_converted) {
+                <?php
+        if ($updateVersion > 30 || $safe_converted) {
             echo 'value = value.replace(/%5D/g,"]");';
-        }
-                ?>
+        } ?>
 
                 value =  dwikiUTF8_decodeFN(value,'safe');
             }
@@ -961,15 +995,15 @@ CKEDITOR_REPLACE;
         var specials = new RegExp("[.*+?|()\\[\\]{}\\\\]", "g"); // .*+?|()[]{}\
         return str.replace(specials, "\\$&");
     }
-    var ckgedit_xcl_fonts =parseInt  ("<?php echo $this->getConf('font_options') ;?>");
-    var ckgedit_xcl_colors =parseInt("<?php echo $this->getConf('color_options') ;?>");
+    var ckgedit_xcl_fonts =parseInt  ("<?php echo $this->getConf('font_options') ; ?>");
+    var ckgedit_xcl_colors =parseInt("<?php echo $this->getConf('color_options') ; ?>");
     var ckgedit_xcl_styles = (ckgedit_xcl_fonts + ckgedit_xcl_colors ==2) ? true : false;
     var HTMLParser_DEBUG = "";
     var ckgedit_hasCaptcha = "<?php echo $this->captcha?1:0?>";
 
     <?php
-        if($this->debug) {
-    ?>
+        if ($this->debug) {
+            ?>
     function HTMLParser_debug() {        
         HTMLParser_DEBUG = "";
         parse_wikitext("");
@@ -985,23 +1019,23 @@ CKEDITOR_REPLACE;
     }
     <?php
         }
-        $url = DOKU_URL . 'lib/plugins/ckgedit/scripts/script-cmpr.js';    
+        $url = DOKU_URL . 'lib/plugins/ckgedit/scripts/script-cmpr.js';
         echo "var script_url = '$url';";
-        if($this->test) {
+        if ($this->test) {
             $nval = substr(md5(time()), -20);
             $parse_url = DOKU_URL . 'lib/plugins/ckgedit/scripts/parse_wiki.js.unc?n=' . $nval;
+        } else {
+            $parse_url = DOKU_URL . 'lib/plugins/ckgedit/scripts/parse_wiki-cmpr.js';
         }
-        else $parse_url = DOKU_URL . 'lib/plugins/ckgedit/scripts/parse_wiki-cmpr.js';
         
         echo "var parse_url = '$parse_url';";
-        //  $safe_url = DOKU_URL . 'lib/plugins/ckgedit/scripts/safeFN_cmpr.js';       
+        //  $safe_url = DOKU_URL . 'lib/plugins/ckgedit/scripts/safeFN_cmpr.js';
 
         global $conf;
 
-        if(isset($conf['animal'])) {
+        if (isset($conf['animal'])) {
             echo "var config_animal='" . $conf['animal'] . "';";
-        }
-    ?>
+        } ?>
 
     LoadScript(parse_url);
     try {
@@ -1032,52 +1066,57 @@ CKEDITOR_REPLACE;
      * Renders a list of instruction to minimal xhtml
      *@author Myron Turner <turnermm02@shaw.ca>
      */
-    function _render_xhtml($text){
+    public function _render_xhtml($text)
+    {
         $mode = 'ckgedit';
 
         global $skip_styling;
         $skip_styling =  $this->getConf('nofont_styling');
-        if(!$skip_styling && $_POST['styling'] == 'no_styles') {
-            $skip_styling = true;
-        }  
-
-        if(strpos($text,'~~NO_STYLING~~') !== false) {
+        if (!$skip_styling && $_POST['styling'] == 'no_styles') {
             $skip_styling = true;
         }
 
-        $text = preg_replace_callback('/\[\[(.*?>)(.*?)\]\]/ms',
-            function ($matches) {    
-                if(strpos($matches[0],"\n") !== false) return $matches[0];
-                if(preg_match("#<(\w+)>.*?<\/\\1>#",$matches[0])) return $matches[0];  
-                list($name,$link_text) = explode('|',$matches[2]);
+        if (strpos($text, '~~NO_STYLING~~') !== false) {
+            $skip_styling = true;
+        }
+
+        $text = preg_replace_callback(
+            '/\[\[(.*?>)(.*?)\]\]/ms',
+            function ($matches) {
+                if (strpos($matches[0], "\n") !== false) {
+                    return $matches[0];
+                }
+                if (preg_match("#<(\w+)>.*?<\/\\1>#", $matches[0])) {
+                    return $matches[0];
+                }
+                list($name, $link_text) = explode('|', $matches[2]);
                 $retv = '[[' . $matches[1] . "oIWIKIo" . $name ."cIWIKIc";
-                if(!empty($link_text)) {
+                if (!empty($link_text)) {
                     $retv .= "|$link_text";
                 }
                 return $retv . ']]';
-            },                 
-            $text);
+            },
+            $text
+        );
 
         // try default renderer first:
         $file = DOKU_INC."inc/parser/$mode.php";
 
-        if(@file_exists($file)){
-	
+        if (@file_exists($file)) {
             require_once $file;
             $rclass = "Doku_Renderer_$mode";
 
-            if ( !class_exists($rclass) ) {
-                trigger_error("Unable to resolve render class $rclass",E_USER_WARNING);
-                msg("Renderer for $mode not valid",-1);
+            if (!class_exists($rclass)) {
+                trigger_error("Unable to resolve render class $rclass", E_USER_WARNING);
+                msg("Renderer for $mode not valid", -1);
                 return null;
             }
             $Renderer = new $rclass();
-        }
-        else{
+        } else {
             // Maybe a plugin is available?
-            $Renderer = plugin_load('renderer',$mode);	    
-            if(is_null($Renderer)){
-                msg("No renderer for $mode found",-1);
+            $Renderer = plugin_load('renderer', $mode);
+            if (is_null($Renderer)) {
+                msg("No renderer for $mode found", -1);
                 return null;
             }
         }
@@ -1085,48 +1124,58 @@ CKEDITOR_REPLACE;
         $text = preg_replace_callback(
             '#(\|.*?)\|.?[\n\r]#ms',
             function ($matches) {
-                $matches[0] = preg_replace("#\\\\\\\\\s*[\r\n]#ms", "  \\\\\\\\  ",$matches[0]);
+                $matches[0] = preg_replace("#\\\\\\\\\s*[\r\n]#ms", "  \\\\\\\\  ", $matches[0]);
                 return ($matches[0]);
             },
-            $text);    
+            $text
+        );
         
         // prevents utf8 conversions of quotation marks
-        $text = str_replace('"',"_ckgedit_QUOT_",$text);        
+        $text = str_replace('"', "_ckgedit_QUOT_", $text);
 
-        $text = preg_replace_callback('/(<code.*?>)([^<]+)(<\/code>)/ms',
+        $text = preg_replace_callback(
+            '/(<code.*?>)([^<]+)(<\/code>)/ms',
             create_function(
-                '$matches',              
+                '$matches',
                 '$quot =  str_replace("_ckgedit_QUOT_",\'"\',$matches[2]); 
                 $quot = str_replace("\\\\ ","_ckgedit_NL",$quot); 
-                $quot .= "_ckgedit_NL";                
-                return $matches[1] . $quot . $matches[3];' 
-            ), $text); 
+                return $matches[1] . $quot . $matches[3];'
+            ),
+            $text
+        );
 
-        $text = preg_replace_callback('/(<file.*?>)([^<]+)(<\/file>)/ms',
+        $text = preg_replace_callback(
+            '/(<file.*?>)([^<]+)(<\/file>)/ms',
             create_function(
-                '$matches',              
+                '$matches',
                 '$quot =  str_replace("_ckgedit_QUOT_",\'"\',$matches[2]); 
                 $quot = str_replace("\\\\ ","_ckgedit_NL",$quot); 
-                $quot .= "_ckgedit_NL";                
-                return $matches[1] . $quot . $matches[3];' 
-            ), $text); 
+                return $matches[1] . $quot . $matches[3];'
+            ),
+            $text
+        );
 
        
-        $text = preg_replace_callback('/(<code>|<file>)([^<]+)(<\/code>|<\/file>)/ms',
+        $text = preg_replace_callback(
+            '/(<code>|<file>)([^<]+)(<\/code>|<\/file>)/ms',
             create_function(
-                '$matches',             
+                '$matches',
                 '$matches[2] = str_replace("&lt;font","ckgeditFONTOpen",$matches[2]);
                 $matches[2] = str_replace("font&gt;","ckgeditFONTClose",$matches[2]);
                 return $matches[1] .$matches[2] . $matches[3]; '
-            ), $text); 
+            ),
+            $text
+        );
     
         $instructions = p_get_instructions("=== header ==="); // loads DOKU_PLUGINS array --M.T. Dec 22 2009
         
         $instructions = p_get_instructions($text);
-        if(is_null($instructions)) return '';
+        if (is_null($instructions)) {
+            return '';
+        }
 
         $Renderer->notoc();
-        if(!$this->getConf('smiley_as_text')) {
+        if (!$this->getConf('smiley_as_text')) {
             $Renderer->smileys = getSmileys();
         }
         $Renderer->entities = getEntities();
@@ -1139,12 +1188,12 @@ CKEDITOR_REPLACE;
            by Matti Lattu<matti.lattu@iki.fi>
            It is a significant contribution to the functionality of ckgEdit
         */
-        foreach ( $instructions as $instruction ) {
-            if ($instruction[0] == 'plugin') {              
+        foreach ($instructions as $instruction) {
+            if ($instruction[0] == 'plugin') {
                 $Renderer->doc .= $instruction[1][3];
             } else {
-               // Execute the callback against the Renderer
-               call_user_func_array(array(&$Renderer, $instruction[0]),$instruction[1]);              
+                // Execute the callback against the Renderer
+                call_user_func_array(array(&$Renderer, $instruction[0]), $instruction[1]);
             }
         }
 
@@ -1153,95 +1202,108 @@ CKEDITOR_REPLACE;
 
         // Post process and return the output
         $data = array($mode,& $Renderer->doc);
-        trigger_event('RENDERER_CONTENT_POSTPROCESS',$data);
+        trigger_event('RENDERER_CONTENT_POSTPROCESS', $data);
         $xhtml = $Renderer->doc;
-        if(!$skip_styling) {  // create font styles from font plugin markup for html display
+        if (!$skip_styling) {  // create font styles from font plugin markup for html display
             $xhtml = preg_replace_callback(
                 '|&amp;lt;font\s+(.*?)/([\w ,\-]+);;([\(\)),\w,\s\#]+);;([\(\)),\w,\s\#]+)&gt;(.*?)&amp;lt;/font&gt;|ms',
-                function($matches) {
-                    $count = 0; $str='';
-                    if($matches[3] && $matches[3] != 'inherit') { $str .= '<span style = "color:' . $matches[3] .'">'; $count++;} 
-                    if($matches[1] && $matches[1] != 'inherit') { $str .= '<span style = "font-size:' . $matches[1] .'">'; $count++; } 
-                    if($matches[2] && $matches[2] != 'inherit') { $str .= '<span style = "font-family:' . $matches[2] .'">'; $count++; } 
-                    if($matches[4] && $matches[4] != 'inherit') { $str .= '<span style = "background-color:' . $matches[4] .'">'; $count++; }  
-                    $str .= $matches[5];              
-                    for($i =0; $i<$count; $i++) {
+                function ($matches) {
+                    $count = 0;
+                    $str='';
+                    if ($matches[3] && $matches[3] != 'inherit') {
+                        $str .= '<span style = "color:' . $matches[3] .'">';
+                        $count++;
+                    }
+                    if ($matches[1] && $matches[1] != 'inherit') {
+                        $str .= '<span style = "font-size:' . $matches[1] .'">';
+                        $count++;
+                    }
+                    if ($matches[2] && $matches[2] != 'inherit') {
+                        $str .= '<span style = "font-family:' . $matches[2] .'">';
+                        $count++;
+                    }
+                    if ($matches[4] && $matches[4] != 'inherit') {
+                        $str .= '<span style = "background-color:' . $matches[4] .'">';
+                        $count++;
+                    }
+                    $str .= $matches[5];
+                    for ($i =0; $i<$count; $i++) {
                         $str .= '</span>';
                     }
-                    return $str;            
-                }, $xhtml
+                    return $str;
+                },
+                $xhtml
             );
         }
             
-        /**   
-        * Alternative to  the one liner at 1179:  $xhtml = str_replace(array('oiwikio','ciwikic'),array('oIWIKIo','cIWIKIc'),$xhtml);   
-        *  if it turns out that there are users using  'oiwikio','ciwikic' 
+        /**
+        * Alternative to  the one liner at 1179:  $xhtml = str_replace(array('oiwikio','ciwikic'),array('oIWIKIo','cIWIKIc'),$xhtml);
+        *  if it turns out that there are users using  'oiwikio','ciwikic'
         $xhtml = preg_replace_callback(
             '|class=\"interwiki.*?href=\".*?:oiwikiotowerciwikic\".*?title=\".*?oiwikiotowerciwikic\"|ms',
             function($matches) {
             $matches[0] = str_replace(array('oiwikio','ciwikic'),array('oIWIKIo','cIWIKIc'),$matches[0]);
             return $matches[0];
         },$xhtml
-        );  
+        );
         */
-        if(stripos($xhtml,'oIWIKIo') !== false) {
-            $xhtml = str_replace(array('oiwikio','ciwikic'),array('oIWIKIo','cIWIKIc'),$xhtml);
+        if (stripos($xhtml, 'oIWIKIo') !== false) {
+            $xhtml = str_replace(array('oiwikio','ciwikic'), array('oIWIKIo','cIWIKIc'), $xhtml);
             $xhtml = preg_replace_callback(
                 '/<?(.*?)oIWIKIo(.*?)cIWIKIc/ms',
                 create_function(
-                    '$matches',              
+                    '$matches',
                     ' if(preg_match("/^\w+$/",$matches[2]) && $matches[1] == "/")  return "/". $matches[2];
-                        return $matches[0];'               
-                ),        
-                $xhtml              
-            );  
+                        return $matches[0];'
+                ),
+                $xhtml
+            );
             $xhtml = preg_replace_callback(
                 '/>oIWIKIo(.*?)cIWIKIc(?=<\/a>)/ms',
                 create_function(
-                    '$matches',              
-                    ' return ">". $matches[1] ;'               
-                ),        
-                $xhtml              
-            );              
-            
+                    '$matches',
+                    ' return ">". $matches[1] ;'
+                ),
+                $xhtml
+            );
         }
            
         $pos = strpos($xhtml, 'MULTI_PLUGIN_OPEN');
-        if($pos !== false) {
+        if ($pos !== false) {
             $xhtml = preg_replace_callback(
                 '|MULTI_PLUGIN_OPEN.*?MULTI_PLUGIN_CLOSE|ms',
                 create_function(
-                    '$matches',                          
+                    '$matches',
                     '$matches[0] = str_replace("//<//", "< ",$matches[0]);
                     $matches[0] = str_replace(array("oIWIKIo","cIWIKIc"),"",$matches[0]);
-                    return preg_replace("/\n/ms","<br />",$matches[0]);'            
+                    return preg_replace("/\n/ms","<br />",$matches[0]);'
                 ),
                 $xhtml
             );
             
             $xhtml = preg_replace('/~\s*~\s*MULTI_PLUGIN_OPEN~\s*~/', "\n\n~~MULTI_PLUGIN_OPEN~~<span class='multi_p_open'>\n\n</span>\n\n", $xhtml);
             $xhtml = preg_replace('/~\s*~\s*MULTI_PLUGIN_CLOSE~\s*~/', "<span class='multi_p_close'>\n\n<br /></span>\n\n~~MULTI_PLUGIN_CLOSE~~\n\n", $xhtml);
-        }  
+        }
 
 
-         // remove empty paragraph: see _ckgedit_NPBBR_ comment above
-        $xhtml = preg_replace('/<p>\s+_ckgedit_NPBBR_\s+<\/p>/ms',"\n",$xhtml);
+        // remove empty paragraph: see _ckgedit_NPBBR_ comment above
+        $xhtml = preg_replace('/<p>\s+_ckgedit_NPBBR_\s+<\/p>/ms', "\n", $xhtml);
         $xhtml = str_replace('_ckgedit_NPBBR_', "<span class='np_break'>&nbsp;</span>", $xhtml);
         $xhtml = str_replace('_ckgedit_QUOT_', '&quot;', $xhtml);
         $xhtml = str_replace('_ckgedit_NL', "\n", $xhtml);
-        $xhtml = str_replace('</pre>', "\n\n</pre><p>&nbsp;</p>", $xhtml);
+        $xhtml = str_replace('</pre>', "</pre><p>&nbsp;</p>", $xhtml);
         // inserts p before an initial codeblock to enable text entry above block
-        $xhtml = preg_replace('/^<pre/',"<p>&nbsp;</p><pre",$xhtml);  
+        $xhtml = preg_replace('/^<pre/', "<p>&nbsp;</p><pre", $xhtml);
         //remove empty markup remaining after removing marked-up acronyms in lists
-        $xhtml = preg_replace('/<(em|b|u|i)>\s+<\/(em|b|u|i)>/ms',"",$xhtml);
-        $xhtml = preg_replace("/col\d+\s+(\w+align)/ms", "$1",$xhtml);  //remove col number for cell prpoerties dialog
-        $xhtml = str_replace('ckgeditFONTOpen', '&amp;lt;font',$xhtml);  // protect font markup in code blocks
-        $xhtml = str_replace('ckgeditFONTClose', 'font&amp;gt;',$xhtml);
-        $xhtml = str_replace('DBLBACKSPLASH', '\\ ',$xhtml);
-        $xhtml = str_replace('NWPIPECHARACTER', '|',$xhtml);            
+        $xhtml = preg_replace('/<(em|b|u|i)>\s+<\/(em|b|u|i)>/ms', "", $xhtml);
+        $xhtml = preg_replace("/col\d+\s+(\w+align)/ms", "$1", $xhtml);  //remove col number for cell prpoerties dialog
+        $xhtml = str_replace('ckgeditFONTOpen', '&amp;lt;font', $xhtml);  // protect font markup in code blocks
+        $xhtml = str_replace('ckgeditFONTClose', 'font&amp;gt;', $xhtml);
+        $xhtml = str_replace('DBLBACKSPLASH', '\\ ', $xhtml);
+        $xhtml = str_replace('NWPIPECHARACTER', '|', $xhtml);
         
-        $ua = strtolower ($_SERVER['HTTP_USER_AGENT']); 
-        if(strpos($ua,'chrome') !== false) {
+        $ua = strtolower($_SERVER['HTTP_USER_AGENT']);
+        if (strpos($ua, 'chrome') !== false) {
             $xhtml = preg_replace_callback(
                 '/(?<=<a )(href=\".*?\")(\s+\w+=\".*?\")(.*?)(?=>)/sm',
                 create_function(
@@ -1251,20 +1313,22 @@ CKEDITOR_REPLACE;
                 ),
                 $xhtml
             );
-		}	 
+        }
 
         return $xhtml;
     }
 
-    function write_debug($what) {
+    public function write_debug($what)
+    {
         return;
         $handle = fopen("ckgedit_php.txt", "a");
         // if(is_array($what)) $what = print_r($what,true);
-        fwrite($handle,"$what\n");
+        fwrite($handle, "$what\n");
         fclose($handle);
     }
 
-    function get_switch_fb_value() {
+    public function get_switch_fb_value()
+    {
         if ($this->getUserFb() == 'dokuwiki') {
             $fbText = $this->getLang('btn_val_ckg_fb');
         } else {
@@ -1273,7 +1337,8 @@ CKEDITOR_REPLACE;
         return $fbText;
     }
 
-    function get_switch_fb_title() {
+    public function get_switch_fb_title()
+    {
         if ($this->getUserFb() == 'dokuwiki') {
             $fbText = $this->getLang('btn_title_ckg_fb');
         } else {
@@ -1282,12 +1347,12 @@ CKEDITOR_REPLACE;
         return $fbText;
     }
 
-    function getUserFb() {
+    public function getUserFb()
+    {
         //get user file browser
         if (!isset($_COOKIE['ckgFbOpt'])) {
             $_COOKIE['ckgFbOpt'] = $this->getConf('default_ckg_filebrowser');
         }
         return $_COOKIE['ckgFbOpt'];
     }
-
 } //end of action class

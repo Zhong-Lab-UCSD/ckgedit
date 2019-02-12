@@ -112,17 +112,18 @@ function parse_wikitext (id) {
 
   window.dwfckTextChanged = false
   if (id != 'bakup') draft_delete()
-  var line_break = '\nL_BR_K  \n'
+  var line_break = '__L_BR_K__'
   var markup = {
     'b': '**',
     'i': '//',
     'em': '//',
     'u': '__',
-    'br': line_break,
+    'br': line_break + '\n',
+    'br_sameline': line_break + ' ',
     'strike': '<del>',
     'del': '<del>',
     's': '<del>',
-    p: '\n\n',
+    'p': '\n\n',
     'a': '[[',
     'img': '\{\{',
     'strong': '**',
@@ -131,10 +132,10 @@ function parse_wikitext (id) {
     'h3': '\n==== ',
     'h4': '\n=== ',
     'h5': '\n== ',
-    'td': '__TABLE_PLACEHOLDER__',
-    'th': '__TABLE_PLACEHOLDER__',
-    'tr': '__TABLE_PLACEHOLDER__',
-    'table': '__TABLE_PLACEHOLDER__',
+    'td': true,
+    'th': true,
+    'tr': true,
+    'table': true,
     'ol': '  - ',
     'ul': '  * ',
     'li': '',
@@ -154,7 +155,6 @@ function parse_wikitext (id) {
     'del': '</del>',
     's': '</del>',
     'strike': '</del>',
-    'p': ' ',
     'br': ' ',
     'a': ']]',
     'img': '\}\}',
@@ -163,9 +163,6 @@ function parse_wikitext (id) {
     'h3': ' ====\n',
     'h4': ' ===\n',
     'h5': ' ==\n',
-    'td': '__TABLE_PLACEHOLDER__',
-    'th': '__TABLE_PLACEHOLDER__',
-    'tr': '__TABLE_PLACEHOLDER__',
     'ol': ' ',
     'ul': ' ',
     'li': '\n',
@@ -446,9 +443,8 @@ function parse_wikitext (id) {
 
         if (tag == 'p') {
           this.in_link = false
-          if (this.nestedTables.length > 0) {
-            tag = 'p_insert'
-            HTMLParser_TABLE = true
+          if (!activeResults || activeResults.endsWith[markup_end[tag]]) {
+            tag = 'blank'
           }
         }
 
@@ -1025,6 +1021,7 @@ function parse_wikitext (id) {
         }
         if (this.link_only) tag = 'img'
         if (tag == 'br') {
+          tag = 'blank'
           if (this.in_multi_plugin) {
             activeResults += '\n'
             return
@@ -1044,7 +1041,7 @@ function parse_wikitext (id) {
           if (this.list_started) {
             activeResults += '_LIST_EOFL_' /* enables newlines in lists:   abc \\def */
           } else {
-            activeResults += '\\\\  '
+            activeResults += '\\\\ '
             return
           }
         } else if (tag.match(/^h(\d+|r)/)) {
@@ -1057,9 +1054,6 @@ function parse_wikitext (id) {
               activeResults = activeResults.replace(/\x20+$/, '')
             }
           }
-        } else if (this.last_col_pipes) {
-          if (format_chars[tag]) activeResults += markup[tag]
-          tag = 'blank'
         } else if (dwfck_note) {
           activeResults += dwfck_note
           return
@@ -1131,7 +1125,10 @@ function parse_wikitext (id) {
         if (this.mfile && !this.attr) {
           this.attr = this.mfile
         }
-        activeResults += markup[tag]          // Set tag
+
+        if (typeof markup[tag] === 'string') {
+          activeResults += markup[tag]          // Set tag
+        }
 
         if (tag == 'a' && this.attr) {
           this.attr = this.attr.replace(/%7c/, '%257c')
@@ -1261,10 +1258,6 @@ function parse_wikitext (id) {
         activeResults += '\n\n' + getTableDokuCode(finishedTable) + '\n'
       }
 
-      if (tag == 'p' && this.nestedTables.length > 0) {
-        tag = 'p_insert'
-        HTMLParser_TABLE = true
-      }
       if (this.geshi) {
         this.geshi = false
         return
@@ -1312,7 +1305,7 @@ function parse_wikitext (id) {
           tag += this.code_type + '>'
         }
         this.code_type = false
-      } else if (markup_end[tag]) {
+      } else if (typeof markup_end[tag] === 'string' && markup_end[tag]) {
         tag = markup_end[tag]
       } else if (this.attr == 'u' && tag == 'em') {
         tag = 'u'
@@ -1325,7 +1318,11 @@ function parse_wikitext (id) {
         let currTable = this.nestedTables[this.nestedTables.length - 1]
         let currCell =
           currTable.rows[currTable.currRowIndex][currTable.currColIndex]
-        currCell.text = activeResults.replace(/__TABLE_PLACEHOLDER__/g, '')
+        if (activeResults.endsWith(markup_end['p'])) {
+          activeResults = activeResults.substring(
+            0, activeResults.length - markup_end['p'].length)
+        }
+        currCell.text = activeResults
         if (currCell.text.includes('\n')) {
           currCell.complexContent = true
         }
@@ -1356,7 +1353,10 @@ function parse_wikitext (id) {
       }
 
       if (this.in_endnotes && current_tag == 'sup') { return }
-      activeResults += tag
+
+      if (typeof tag === 'string') {
+        activeResults += tag
+      }
 
       if (format_chars[current_tag]) {
         if (this.list_level) {
@@ -1499,7 +1499,7 @@ function parse_wikitext (id) {
         text = text.replace(/--/g, '&ndash;')
       }
       if (this.list_started) {
-        activeResults = activeResults.replace(/_LIST_EOFL_\s*L_BR_K\s*$/, '_LIST_EOFL_')
+        activeResults = activeResults.replace(/_LIST_EOFL_\s*__L_BR_K__\s*$/, '_LIST_EOFL_')
       }
       if (!this.code_type) {   // keep special character literals outside of code block
                 // don't touch samba share or Windows path backslashes
@@ -1694,11 +1694,11 @@ function parse_wikitext (id) {
             })
   }
 
-  var line_break_final = '\\\\'
+  var line_break_final = '\\\\ '
   if (HTMLParser_LBR) {
-    activeResults = activeResults.replace(/(L_BR_K)+/g, line_break_final)
-    activeResults = activeResults.replace(/L_BR_K/gm, line_break_final)
-    activeResults = activeResults.replace(/(\\\\)\s+/gm, '$1 \n')
+    activeResults = activeResults.replace(/(__L_BR_K__)+/g, line_break_final)
+    activeResults = activeResults.replace(/__L_BR_K__/gm, line_break_final)
+    activeResults = activeResults.replace(/(\\\\)\s+/gm, line_break_final)
   }
 
   if (HTMLParser_PRE) {
