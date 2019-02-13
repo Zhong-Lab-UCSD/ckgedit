@@ -7,16 +7,25 @@ function parse_wikitext (id) {
   var useComplexTables = getComplexTables()
 
   function fontConflict () {
-    var regex = /\>\s+(\*\*|__|\/\/|'')\s+_\s+\1\s+<\/font>/gm
+    let regex = /\>\s+(\*\*|__|\/\/|'')\s+_\s+\1\s+<\/font>/gm
     activeResults = activeResults.replace(regex, function (m) {
       m = m.replace(/\s+/g, '')
       return m
     })
 
-    regex = new RegExp('\\>(.*?)(\\]\\]\\<\\/font\\>)|(\\<\\/font\\>\\]\\])', 'gm')
+    /**
+     * This matches if there are links `[[ ]]` within `<font> </font>`.
+     * It only maps the closing part (`]]` followed by `</font>`).
+     */
+    regex = /<font ?((?!>).)*?>(.*?)(]]<\/font>)|(<\/font>]])/gm
     if (activeResults.match(regex)) return true
 
-    regex = new RegExp('(\\{\\{(.*?)\\.\\w{2,4})\\|\\<font')
+    /**
+     * This matches if there are `<font> </font>` within images `{{ }}`
+     * (image captions).
+     * It only maps the opening part (`{{` followed by `|<font>`).
+     */
+    regex = new RegExp('({{(((?!}}).)*?)\\.\\w{2,4})\\|\\<font')
     if (activeResults.match(regex)) return true
 
     regex = new RegExp('\\{\\{(.*?)\\.\\w{2,4}\\|[:\\w\\-\\.\\s]+\\<\\/font')
@@ -75,6 +84,8 @@ function parse_wikitext (id) {
 
   function getTableDokuCode (table) {
     let tableResult = ''
+    let complexTableBegin = '~~TABLE_CELL_WRAP_START~~<WRAP>\n'
+    let complexTableEnd = '\n</WRAP>~~TABLE_CELL_WRAP_STOP~~'
     for (let i = 0; i < table.rows.length; i++) {
       let type = null
       for (let col = 0; col < table.rows[i].length; col++) {
@@ -95,7 +106,7 @@ function parse_wikitext (id) {
           }
 
           if (currCell.complexContent) {
-            tableResult += '<WRAP>\n' + currCell.text + '\n</WRAP>'
+            tableResult += complexTableBegin + currCell.text + complexTableEnd
           } else {
             tableResult += currCell.text
           }
@@ -119,7 +130,7 @@ function parse_wikitext (id) {
     'em': '//',
     'u': '__',
     'br': line_break + '\n',
-    'br_sameline': line_break + ' ',
+    'br_same_line': line_break,
     'strike': '<del>',
     'del': '<del>',
     's': '<del>',
@@ -1020,29 +1031,20 @@ function parse_wikitext (id) {
           return
         }
         if (this.link_only) tag = 'img'
-        if (tag == 'br') {
-          tag = 'blank'
-          if (this.in_multi_plugin) {
+        if (tag === 'br') {
+          if (this.in_multi_plugin || this.code_type) {
+            // These are the cases where a simple '\n'
+            // (not a wiki line-break '\\\\\n') is needed.
             activeResults += '\n'
             return
           }
 
-          if (!this.code_type) {
-            HTMLParser_LBR = true
-          } else if (this.code_type) {
-            activeResults += '\n'
-            return
-          }
-
-          if (this.nestedTables.length > 0) {
-            activeResults += HTMLParserParaInsert
-            return
-          }
-          if (this.list_started) {
-            activeResults += '_LIST_EOFL_' /* enables newlines in lists:   abc \\def */
-          } else {
-            activeResults += '\\\\ '
-            return
+          HTMLParser_LBR = true
+          if (this.nestedTables.length > 0 || this.list_started) {
+            // There are the cases where a '\n' is not supposed to appear
+            // in the final wiki code.
+            // Use `br_same_line` ('\\\\ ') instead
+            tag = 'br_same_line'
           }
         } else if (tag.match(/^h(\d+|r)/)) {
           var str_len = activeResults.length
@@ -1729,7 +1731,7 @@ function parse_wikitext (id) {
   if (HTMLParserFont)   // HTMLParserFont start
     {
     String.prototype.font_link_reconcile = function (v) {
-      if (v == 1) {
+      if (v === 1) {
         regex = /\[\[(.*?)(<font[^\>]+>)([^<]+(\]\])?)[^\>]+\/font>\s*(\]\])/gm
       } else regex = /(<font[^\>\{]+>)\{\{(:?.*?)\|(:?.*?)<\/font>/gm
 
@@ -1848,7 +1850,6 @@ function parse_wikitext (id) {
   activeResults = activeResults.replace(/\|.*?\]*(\s*)__FWS__/g, '$1}}')
   activeResults = activeResults.replace(/(\s*)__FWS__/g, '$1}}')
   activeResults = activeResults.replace(/\n{3,}/g, '\n\n')
-  activeResults = activeResults.replace(/_LIST_EOFL_/gm, ' ' + line_break_final + ' ')
 
   if (useComplexTables) {
     if (activeResults.indexOf('~~COMPLEX_TABLES~~') == -1) {

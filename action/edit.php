@@ -358,7 +358,11 @@ class action_plugin_ckgedit_edit extends DokuWiki_Action_Plugin
             );
             $text = preg_replace('/TPRE_CLOSE\s+/ms', "TPRE_CLOSE", $text);
         
-            $text = preg_replace('/<(?!code|file|del|sup|sub|wrap|block|inline\/\/|\s|\/del|\/code|\/file|\/sup|\/sub|\/wrap|\/block|\/inline)/msi', "&lt;", $text);
+            $text = preg_replace('/<(?!code|file|del|sup|sub|\/\/|\s|\/del|\/code|\/file|\/sup|\/sub)/msi', "&lt;", $text);
+
+            /** Replace the wrap element added in complex table cells back */
+            $text = preg_replace('/(?<=~~TABLE_CELL_WRAP_START~~)\s*&lt;(?=(wrap|block|inline))/msi', "<", $text);
+            $text = preg_replace('/&lt;(?=(\/wrap|\/block|\/inline).*?>\s*~~TABLE_CELL_WRAP_STOP~~)/msi', "<", $text);
             $text = str_replace('%%&lt;', '&#37;&#37;&#60;', $text);
         }
        
@@ -404,6 +408,8 @@ class action_plugin_ckgedit_edit extends DokuWiki_Action_Plugin
         }
         $this->xhtml = $this->_render_xhtml($text);
 
+        $this->xhtml = preg_replace("/~~TABLE_CELL_WRAP_START~~\s*<(wrap|block|inline)>/msi", "", $this->xhtml);
+        $this->xhtml = preg_replace("/<(\/wrap|\/block|\/inline)>\s*~~TABLE_CELL_WRAP_STOP~~/msi", "", $this->xhtml);
         $this->xhtml = str_replace("__IWIKI_FSLASH__", "&frasl;", $this->xhtml);
         if ($this->getConf('duplicate_notes')) {
             $this->xhtml = preg_replace("/FNoteINSert\d+/ms", "", $this->xhtml);
@@ -999,7 +1005,7 @@ CKEDITOR_REPLACE;
     var ckgedit_xcl_colors =parseInt("<?php echo $this->getConf('color_options') ; ?>");
     var ckgedit_xcl_styles = (ckgedit_xcl_fonts + ckgedit_xcl_colors ==2) ? true : false;
     var HTMLParser_DEBUG = "";
-    var ckgedit_hasCaptcha = "<?php echo $this->captcha?1:0?>";
+    var ckgedit_hasCaptcha = "<?php echo $this->captcha?1:0; ?>";
 
     <?php
         if ($this->debug) {
