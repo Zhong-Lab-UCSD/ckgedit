@@ -7,31 +7,23 @@ function parse_wikitext (id) {
   var useComplexTables = getComplexTables()
 
   function fontConflict () {
-    let regex = /\>\s+(\*\*|__|\/\/|'')\s+_\s+\1\s+<\/font>/gm
-    activeResults = activeResults.replace(regex, function (m) {
-      m = m.replace(/\s+/g, '')
-      return m
-    })
+    // let regex = /<font\s*((?!>)[\s\S])*?>\s+(\*\*|__|\/\/|'')\s+_\s+\1\s+<\/font>/gm
+    // activeResults = activeResults.replace(regex, function (m) {
+    //   m = m.replace(/\s+/g, '')
+    //   return m
+    // })
 
     /**
-     * This matches if there are links `[[ ]]` within `<font> </font>`.
-     * It only maps the closing part (`]]` followed by `</font>`).
+     * This matches if there are `<font> </font>` within links `[[ ]]`.
      */
-    regex = /<font ?((?!>).)*?>(.*?)(]]<\/font>)|(<\/font>]])/gm
+    let regex = /\[\[((?!]])[\s\S])*?<font\s*((?!>)[\s\S])*?>([\s\S]*?)(<\/font>((?!\[\[)[\s\S])*?]])/gim
     if (activeResults.match(regex)) return true
 
     /**
-     * This matches if there are `<font> </font>` within images `{{ }}`
-     * (image captions).
-     * It only maps the opening part (`{{` followed by `|<font>`).
+     * This matches if there are `<font> </font>` within images (image captions)
+     * or plugins `{{ }}`.
      */
-    regex = new RegExp('({{(((?!}}).)*?)\\.\\w{2,4})\\|\\<font')
-    if (activeResults.match(regex)) return true
-
-    regex = new RegExp('\\{\\{(.*?)\\.\\w{2,4}\\|[:\\w\\-\\.\\s]+\\<\\/font')
-    if (activeResults.match(regex)) return true
-
-    regex = new RegExp('\\>\\{\\{(.*?)\\.\\w+\\<\\/font\\>\\b', 'gm')
+    regex = /\{\{((?!}})[\s\S])*?<font\s*((?!>)[\s\S])*?>([\s\S]*?)(<\/font>((?!\{\{)[\s\S])*?}})/gim
     if (activeResults.match(regex)) return true
 
     return false
@@ -377,9 +369,9 @@ function parse_wikitext (id) {
       this.interwiki = true
     },
     start: function (tag, attrs, unary) {
-            /**   if table debugging code:
-            this_debug = this.dbg;
-            */
+      /**   if table debugging code:
+      this_debug = this.dbg;
+      */
       if (markup[tag]) {
         if (format_chars[tag] && this.in_link) {
           this.link_formats.push(tag)
@@ -617,7 +609,7 @@ function parse_wikitext (id) {
                 this.font_family = matches[1]
               }
 
-                            // matches = attrs[i].value.match(/font-size:\s*(\d+(\w+|%));?/);
+              // matches = attrs[i].value.match(/font-size:\s*(\d+(\w+|%));?/);
               matches = attrs[i].value.match(/font-size:\s*(.*)/)
               if (matches) {
                 matches[1] = matches[1].replace(/;/, '')
@@ -647,7 +639,7 @@ function parse_wikitext (id) {
           }
 
           if (tag == 'a') {
-                        //             if(!confirm(attrs[i].name + '="' + attrs[i].escaped + '"')) exit;
+            //             if(!confirm(attrs[i].name + '="' + attrs[i].escaped + '"')) exit;
             if (attrs[i].name == 'title') {
               this.link_title = attrs[i].escaped
               if (interwiki_class) {
@@ -685,8 +677,8 @@ function parse_wikitext (id) {
                 var link_find = attrs[i].escaped.match(/media=(.*)/)
                 if (link_find) this.link_title = link_find[1]
               }
-                            // required to distinguish external images from external mime types
-                            // that are on the wiki which also use {{url}}
+              // required to distinguish external images from external mime types
+              // that are on the wiki which also use {{url}}
               var media_type = attrs[i].escaped.match(/fetch\.php.*?media=.*?\.(png|gif|jpg|jpeg)$/i)
               if (media_type) media_type = media_type[1]
 
@@ -716,7 +708,7 @@ function parse_wikitext (id) {
                 this.attr = url
                 local_image = false
               }
-                            // external mime types after they've been saved first time
+              // external mime types after they've been saved first time
               else if (http && !media_type && (matches = attrs[i].escaped.match(/fetch\.php(.*)/))) {
                 if (matches[1].match(/media=/)) {
                   elems = matches[1].split(/=/)
@@ -754,8 +746,8 @@ function parse_wikitext (id) {
                 if (!matches) {
                   matches = attrs[i].escaped.match(/doku.php\/(.*)/)
                 }
-                                /* previously saved internal link with query string
-                                  requires initial ? to be recognized by DW. In Anteater and later */
+                /* previously saved internal link with query string
+                  requires initial ? to be recognized by DW. In Anteater and later */
                 if (matches) {
                   if (!matches[1].match(/\?/) && matches[1].match(/&amp;/)) {
                     qs_set = true
@@ -825,16 +817,16 @@ function parse_wikitext (id) {
                 this.attr = decodeURIComponent(this.attr)
               }
 
-                            // alert('title: ' + this.link_title + '  class: ' + this.link_class + ' export: ' +this.export_code);
+              // alert('title: ' + this.link_title + '  class: ' + this.link_class + ' export: ' +this.export_code);
               if (this.link_title && this.link_title.match(/Snippet/)) this.code_snippet = true
 
-                            /* anchors to current page without prefixing namespace:page */
+              /* anchors to current page without prefixing namespace:page */
               if (attrs[i].value.match(/^#/) && this.link_class.match(/wikilink/)) {
                 this.attr = attrs[i].value
                 this.link_title = false
               }
 
-                            /* These two conditions catch user_rewrite not caught above */
+              /* These two conditions catch user_rewrite not caught above */
               if (this.link_class.match(/wikilink/) && this.link_title) {
                 this.external_mime = false
                 if (!this.attr) {
@@ -851,7 +843,7 @@ function parse_wikitext (id) {
                   this.attr = this.attr.replace(/\//g, ':')
                 }
 
-                                /* catch query strings attached to internal links for .htacess nice urls  */
+                /* catch query strings attached to internal links for .htacess nice urls  */
                 if (!qs_set && attrs[i].name == 'href') {
                   if (!this.attr.match(/\?.*?=/) && !attrs[i].value.match(/doku.php/)) {
                     var qs = attrs[i].value.match(/(\?.*)$/)
@@ -882,7 +874,7 @@ function parse_wikitext (id) {
               }
               this.link_title = ''
               this.link_class = ''
-                            //  break;
+              //  break;
             }
           }
 
@@ -933,10 +925,10 @@ function parse_wikitext (id) {
             }
 
             if (attrs[i].name == 'src') {
-                            //  alert(attrs[i].name + ' = ' + attrs[i].value + ',  fnencode=' + oDokuWiki_FCKEditorInstance.dwiki_fnencode);
+              //  alert(attrs[i].name + ' = ' + attrs[i].value + ',  fnencode=' + oDokuWiki_FCKEditorInstance.dwiki_fnencode);
 
               var src = ''
-                            // fetched by fetch.php
+              // fetched by fetch.php
               if (matches = attrs[i].escaped.match(/fetch\.php.*?(media=.*)/)) {
                 var elems = matches[1].split('=')
                 src = elems[1]
@@ -950,20 +942,20 @@ function parse_wikitext (id) {
                 src = attrs[i].escaped
                 src = src.replace(/\?.*?$/, '')
               }
-                            // url rewrite 1
+              // url rewrite 1
               else if (matches = attrs[i].escaped.match(/\/_media\/(.*)/)) {
                 var elems = matches[1].split(/\?/)
                 src = elems[0]
                 src = src.replace(/\//g, ':')
                 if (!src.match(/^:/)) src = ':' + src
               }
-                            // url rewrite 2
+              // url rewrite 2
               else if (matches = attrs[i].escaped.match(/\/lib\/exe\/fetch.php\/(.*)/)) {
                 var elems = matches[1].split(/\?/)
                 src = elems[0]
                 if (!src.match(/^:/)) src = ':' + src
               } else {
-                                // first insertion from media mananger
+                // first insertion from media mananger
                 matches = attrs[i].escaped.match(/^.*?\/userfiles\/image\/(.*)/)
                 if (!matches && typeof config_animal !== 'undefined') {
                   var regex = new RegExp(config_animal + '\/image\/(.*)$')
@@ -987,7 +979,7 @@ function parse_wikitext (id) {
                 }
               }
               if (src && src.match(/lib\/images\/smileys/)) {
-                                // src = 'http://' + window.location.host + src;
+                // src = 'http://' + window.location.host + src;
                 this.is_smiley = true
               }
               this.attr = src
@@ -1075,7 +1067,7 @@ function parse_wikitext (id) {
           activeResults = activeResults.replace(/[\x20]+$/, '')
 
           for (var s = 0; s < this.list_level; s++) {
-                        // this handles format characters at the ends of list lines
+            // this handles format characters at the ends of list lines
             if (activeResults.match(/_FORMAT_SPACE_\s*$/)) {
               activeResults = activeResults.replace(/_FORMAT_SPACE_\s*$/, '\n')
             }
@@ -1119,7 +1111,7 @@ function parse_wikitext (id) {
             this.in_font = false
           }
           return
-                    /* <font 18pt:bold,italic/garamond;;color;;background_color>  */
+          /* <font 18pt:bold,italic/garamond;;color;;background_color>  */
         }
 
         if (this.in_endnotes && tag == 'a') return
@@ -1209,7 +1201,7 @@ function parse_wikitext (id) {
       }
       if (tag == 'span' && this.in_font && !ckgedit_xcl_styles) {
         tag = 'font'
-                // <font 18pt/garamond;;color;;background_color>
+        // <font 18pt/garamond;;color;;background_color>
         var font_str = '<font ' + this.font_size + '/' + this.font_family + ';;' + this.font_color + ';;' + this.font_bgcolor + '>'
         var inherits = font_str.match(/(inherit)/g)
         if (inherits && inherits.length < 3) HTMLParserFontInfix = true
@@ -1271,7 +1263,7 @@ function parse_wikitext (id) {
           return
         }
       } else if (tag == 'a' && this.attr == 'src') {
-                // if local image without link content, as in <a . . .></a>, delete link markup
+        // if local image without link content, as in <a . . .></a>, delete link markup
         if (this.backup('\[\[', '\{')) return
       }
 
@@ -1422,8 +1414,8 @@ function parse_wikitext (id) {
       text = text.replace(/^(&gt;)+/, function (match, quotes) {
         return (match.replace(/(&gt;)/g, '\__QUOTE__'))
       }
-            )
-            // adjust spacing on multi-formatted strings
+      )
+      // adjust spacing on multi-formatted strings
       activeResults = activeResults.replace(/([\/\*_])_FORMAT_SPACE_([\/\*_]{2})_FORMAT_SPACE_$/, '$1$2@@_SP_@@')
       if (text.match(/^&\w+;/)) {
         activeResults = activeResults.replace(/_FORMAT_SPACE_\s*$/, '')   // remove unwanted space after character entity
@@ -1491,7 +1483,7 @@ function parse_wikitext (id) {
         return
       }
 
-            /* remove space between link end markup and following punctuation */
+      /* remove space between link end markup and following punctuation */
       if (this.last_tag == 'a' && text.match(/^[\.,;\:\!]/)) {
         activeResults = activeResults.replace(/\s$/, '')
       }
@@ -1504,7 +1496,7 @@ function parse_wikitext (id) {
         activeResults = activeResults.replace(/_LIST_EOFL_\s*__L_BR_K__\s*$/, '_LIST_EOFL_')
       }
       if (!this.code_type) {   // keep special character literals outside of code block
-                // don't touch samba share or Windows path backslashes
+        // don't touch samba share or Windows path backslashes
         if (!activeResults.match(/\[\[\\\\.*?\|$/) && !text.match(/\w:(\\(\w?))+/)) {
           if (!text.match(/\\\\[\w\.\-\_]+\\[\w\.\-\_]+/)) {
             text = text.replace(/([\\])/g, '%%$1%%')
@@ -1539,7 +1531,7 @@ function parse_wikitext (id) {
       if (text && text.length) {
         activeResults += text
       }
-            // remove space between formatted character entity and following character string
+      // remove space between formatted character entity and following character string
       activeResults = activeResults.replace(/(&\w+;)\s*([\*\/_]{2})_FORMAT_SPACE_(\w+)/, '$1$2$3')
 
       if (this.list_level && this.list_level > 1) {
@@ -1549,7 +1541,7 @@ function parse_wikitext (id) {
       try {    // in case regex throws error on dynamic regex creation
         var regex = new RegExp('([\*\/\_]{2,})_FORMAT_SPACE_([\*\/\_]{2,})(' + RegExp.escape(text) + ')$')
         if (activeResults.match(regex)) {
-                    // remove left-over space inside multiple format sequences
+          // remove left-over space inside multiple format sequences
           activeResults = activeResults.replace(regex, '$1$2$3')
         }
       } catch (ex) { }
@@ -1562,7 +1554,7 @@ function parse_wikitext (id) {
     },
 
     comment: function (text) {
-            // activeResults += "<!--" + text + "-->";
+      // activeResults += "<!--" + text + "-->";
     },
 
     dbg: function (text, heading) {
@@ -1667,7 +1659,7 @@ function parse_wikitext (id) {
     var regex = new RegExp(HTMLParser_FORMAT_SPACE + '@@_SP_@@', 'g')
     activeResults = activeResults.replace(regex, ' ')
 
-        // spacing around entities with double format characters
+    // spacing around entities with double format characters
     activeResults = activeResults.replace(/([\*\/_]{2})@@_SP_@@(&\w+;)/g, '$1 $2')
 
     activeResults = activeResults.replace(/\n@@_SP_@@\n/g, '')
@@ -1679,21 +1671,21 @@ function parse_wikitext (id) {
     activeResults = activeResults.replace(regex, '')
 
     if (HTMLFormatInList) {
-            /* removes extra newlines from lists */
+      /* removes extra newlines from lists */
       activeResults = activeResults.replace(/(\s+[\-\*_]\s*)([\*\/_\']{2})(.*?)(\2)([^\n]*)\n+/gm,
-                function (match, list_type, format, text, list_type_close, rest) {
-                  return (list_type + format + text + list_type_close + rest + '\n')
-                })
+        function (match, list_type, format, text, list_type_close, rest) {
+          return (list_type + format + text + list_type_close + rest + '\n')
+        })
     }
   }
 
-    /* fix for links in lists, at ends of lines, which cause loss of line-feeds */
+  /* fix for links in lists, at ends of lines, which cause loss of line-feeds */
   if (HTMLLinkInList) {
     activeResults = activeResults.replace(/(\]\]|\}\})(\s+)(\*|-)/mg,
-            function (match, link, spaces, type) {
-              spaces = spaces.replace(/\n/, '')
-              return (link + '\n' + spaces + type)
-            })
+      function (match, link, spaces, type) {
+        spaces = spaces.replace(/\n/, '')
+        return (link + '\n' + spaces + type)
+      })
   }
 
   var line_break_final = '\\\\ '
@@ -1721,7 +1713,7 @@ function parse_wikitext (id) {
     activeResults = activeResults.replace(/(\||\^)[ ]+(\||\^)\s$/g, '$1\n')
     activeResults = activeResults.replace(/(\||\^)[ ]+(\||\^)/g, '$1')
   }
-    // prevents valid empty td/th cells from being removed above
+  // prevents valid empty td/th cells from being removed above
   activeResults = activeResults.replace(/_FCKG_BLANK_TD_/g, ' ')
 
   if (HTMLParserOpenAngleBracket) {
@@ -1729,36 +1721,36 @@ function parse_wikitext (id) {
   }
 
   if (HTMLParserFont)   // HTMLParserFont start
-    {
+  {
     String.prototype.font_link_reconcile = function (v) {
       if (v === 1) {
         regex = /\[\[(.*?)(<font[^\>]+>)([^<]+(\]\])?)[^\>]+\/font>\s*(\]\])/gm
       } else regex = /(<font[^\>\{]+>)\{\{(:?.*?)\|(:?.*?)<\/font>/gm
 
       return (
-                this.replace(
-                    regex,
-                    function (m, a, b, c) {
-                      a = a.replace(/\n/gm, '')
-                      a = a.replace(/\s/gm, '')
-                      a = a.replace(/[\[\]\{\}]/g, '')
-                      a = a.replace(/\|/g, '')
-                      c = c.replace(/\n/gm, '')
-                      c = c.replace(/\s/gm, '')
-                      c = c.replace(/[\[\]\}\{]/g, '')
-                      if (v == 1) { c = '[[' + a + '|' + c + ']]' } else c = '{{' + b + '|' + c + '}}'
+        this.replace(
+          regex,
+          function (m, a, b, c) {
+            a = a.replace(/\n/gm, '')
+            a = a.replace(/\s/gm, '')
+            a = a.replace(/[\[\]\{\}]/g, '')
+            a = a.replace(/\|/g, '')
+            c = c.replace(/\n/gm, '')
+            c = c.replace(/\s/gm, '')
+            c = c.replace(/[\[\]\}\{]/g, '')
+            if (v == 1) { c = '[[' + a + '|' + c + ']]' } else c = '{{' + b + '|' + c + '}}'
 
-                      var val = prompt(LANG.plugins.ckgedit.font_err_1 + '\n' + c + '\n' + LANG.plugins.ckgedit.font_err_2)
-                      if (val == null) {
-                        if (ckgedit_to_dwedit) {
-                          ckgedit_to_dwedit = false
-                          return c
-                        } else throw new Error(LANG.plugins.ckgedit.font_err_throw)
-                      }
-                      if (val) return val
-                      return c
-                    }
-                )
+            var val = prompt(LANG.plugins.ckgedit.font_err_1 + '\n' + c + '\n' + LANG.plugins.ckgedit.font_err_2)
+            if (val == null) {
+              if (ckgedit_to_dwedit) {
+                ckgedit_to_dwedit = false
+                return c
+              } else throw new Error(LANG.plugins.ckgedit.font_err_throw)
+            }
+            if (val) return val
+            return c
+          }
+        )
       )
     }
     if (HTMLParserFontInfix) {
@@ -1817,13 +1809,13 @@ function parse_wikitext (id) {
       }
       return fn
     }
-        )
+    )
   }
 
   activeResults = activeResults.replace(/(={3,}.*?)(\{\{.*?\}\})(.*?={3,})/g, '$1$3\n\n$2')
-    // remove any empty footnote markup left after section re-edits
+  // remove any empty footnote markup left after section re-edits
   activeResults = activeResults.replace(/(<sup>)*\s*\[\[\s*\]\]\s*(<\/sup>)*\n*/g, '')
-    // remove piled up sups with ((notes))
+  // remove piled up sups with ((notes))
 
   activeResults = activeResults.replace(/<sup>\s*\(\(\d+\)\)\s*<\/sup>/mg, '')
 
@@ -1833,17 +1825,17 @@ function parse_wikitext (id) {
   }
 
   if (HTMLParser_NOWIKI) {
-        /* any characters escaped by DW %%<char>%% are replaced by NOWIKI_<char>
-           <char> is restored in save.php
-       */
+    /* any characters escaped by DW %%<char>%% are replaced by NOWIKI_<char>
+       <char> is restored in save.php
+   */
     var nowiki_escapes = '%'  // this technique allows for added chars to attach to NOWIKI_$1_
     var regex = new RegExp('([' + nowiki_escapes + '])', 'g')
 
     activeResults = activeResults.replace(/(&lt;nowiki&gt;)(.*?)(&lt;\/nowiki&gt;)/mg,
-            function (all, start, mid, close) {
-              mid = mid.replace(/%%(.)%%/mg, 'NOWIKI_$1_')
-              return start + mid.replace(regex, 'NOWIKI_$1_') + close
-            })
+      function (all, start, mid, close) {
+        mid = mid.replace(/%%(.)%%/mg, 'NOWIKI_$1_')
+        return start + mid.replace(regex, 'NOWIKI_$1_') + close
+      })
   }
 
   activeResults = activeResults.replace(/__SWF__(\s*)\[*/g, '{{$1')
