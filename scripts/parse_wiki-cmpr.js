@@ -6,27 +6,125 @@ function parse_wikitext (id) {
   }
   var useComplexTables = getComplexTables()
 
-  function fontConflict () {
+  function fontLinkReconcile () {
     // let regex = /<font\s*((?!>)[\s\S])*?>\s+(\*\*|__|\/\/|'')\s+_\s+\1\s+<\/font>/gm
     // activeResults = activeResults.replace(regex, function (m) {
     //   m = m.replace(/\s+/g, '')
     //   return m
     // })
 
+    let promptFunction = (match, proposal) => {
+      let val = window.prompt(LANG.plugins.ckgedit.font_err_1 + '\nFrom:\n' +
+        match + '\nTo:\n' + proposal + '\n' + LANG.plugins.ckgedit.font_err_2)
+      if (val == null) {
+        if (ckgedit_to_dwedit) {
+          ckgedit_to_dwedit = false
+          return proposal
+        } else throw new Error(LANG.plugins.ckgedit.font_err_throw)
+      }
+      if (val) return val
+      return proposal
+    }
+
     /**
+     * NOTE: nested `<font> </font>`, `[[ ]]` and `{{ }}` is not considered
+     * here.
+     *
      * This matches if there are `<font> </font>` within links `[[ ]]`.
      */
-    let regex = /\[\[((?!]])[\s\S])*?<font\s*((?!>)[\s\S])*?>([\s\S]*?)(<\/font>((?!\[\[)[\s\S])*?]])/gim
-    if (activeResults.match(regex)) return true
+    let regex = /\[\[((?:(?!]])[\s\S])*?)(<font\s*(?:(?!>)[\s\S])*?>)((?:(?!]])[\s\S])*?)<\/font>([\s\S]*?)]]/gim
+    if (activeResults.match(regex)) {
+      activeResults = activeResults.replace(
+        regex, (match, linkToFont, fontStart, insideFont, fontToLink) => {
+          return promptFunction(match,
+            fontStart + '[[' + linkToFont + insideFont + fontToLink +
+            ']]</font>'
+          )
+        }
+      )
+    }
 
     /**
      * This matches if there are `<font> </font>` within images (image captions)
      * or plugins `{{ }}`.
      */
-    regex = /\{\{((?!}})[\s\S])*?<font\s*((?!>)[\s\S])*?>([\s\S]*?)(<\/font>((?!\{\{)[\s\S])*?}})/gim
-    if (activeResults.match(regex)) return true
+    regex = /\{\{((?:(?!}})[\s\S])*?)(<font\s*(?:(?!>)[\s\S])*?>)((?:(?!}})[\s\S])*?)<\/font>([\s\S]*?)}}/gim
+    if (activeResults.match(regex)) {
+      activeResults = activeResults.replace(
+        regex, (match, linkToFont, fontStart, insideFont, fontToLink) => {
+          return promptFunction(match,
+            fontStart + '{{' + linkToFont + insideFont + fontToLink +
+            '}}</font>'
+          )
+        }
+      )
+    }
 
-    return false
+    /**
+     * These matches if `<font> </font>` and links `[[ ]]` are interlaced.
+     * (technically this should never happen)
+     *
+     * First `[[ <font> ]] </font>`
+     */
+    regex = /\[\[((?:(?!]])[\s\S])*?)(<font\s*(?:(?!>)[\s\S])*?>)((?:(?!<\/font>)[\s\S])*?]][\s\S]*?)<\/font>/gim
+    if (activeResults.match(regex)) {
+      activeResults = activeResults.replace(
+        regex, (match, linkToFont, fontStart, insideFont) => {
+          // Note that `]]` is within capture group `insideFont`
+          return promptFunction(match,
+            fontStart + '[[' + linkToFont + insideFont + '</font>'
+          )
+        }
+      )
+    }
+
+    /**
+     * Then `<font> [[ </font> ]]`
+     */
+    regex = /(<font\s*(?:(?!>)[\s\S])*?>)((?:(?!<\/font>)[\s\S])*?\[\[(?:(?!]])[\s\S])*?)<\/font>([\s\S]*?)]]/gim
+    if (activeResults.match(regex)) {
+      activeResults = activeResults.replace(
+        regex, (match, fontStart, insideFont, fontToLink) => {
+          // Note that `[[` is within capture group `insideFont`
+          return promptFunction(match,
+            fontStart + insideFont + fontToLink + ']]</font>'
+          )
+        }
+      )
+    }
+
+    /**
+     * These matches if `<font> </font>` and links `{{ }}` are interlaced.
+     * (technically this should never happen)
+     *
+     * First `{{ <font> }} </font>`
+     */
+    regex = /\{\{((?:(?!}})[\s\S])*?)(<font\s*(?:(?!>)[\s\S])*?>)((?:(?!<\/font>)[\s\S])*?}}[\s\S]*?)<\/font>/gim
+    if (activeResults.match(regex)) {
+      activeResults = activeResults.replace(
+        regex, (match, linkToFont, fontStart, insideFont) => {
+          // Note that `}}` is within capture group `insideFont`
+          return promptFunction(match,
+            fontStart + '{{' + linkToFont + insideFont + '</font>'
+          )
+        }
+      )
+    }
+
+    /**
+     * Then `<font> {{ </font> }}`
+     */
+    regex = /(<font\s*(?:(?!>)[\s\S])*?>)((?:(?!<\/font>)[\s\S])*?\{\{(?:(?!}})[\s\S])*?)<\/font>([\s\S]*?)}}/gim
+    if (activeResults.match(regex)) {
+      activeResults = activeResults.replace(
+        regex, (match, fontStart, insideFont, fontToLink) => {
+          // Note that `{{` is within capture group `insideFont`
+          return promptFunction(match,
+            fontStart + insideFont + fontToLink + '}}</font>'
+          )
+        }
+      )
+    }
   }
   //   /**
   //      table debugging code;
@@ -1053,7 +1151,7 @@ function parse_wikitext (id) {
           return
         }
 
-        if (tag == 'b' || tag == 'i' && this.list_level) {
+        if (tag === 'b' || tag === 'i' && this.list_level) {
           if (activeResults.match(/(\/\/|\*)(\x20)+/)) {
             activeResults = activeResults.replace(/(\/\/|\*)(\x20+)\-/, '$1\n' + '$2-')
           }
@@ -1429,9 +1527,11 @@ function parse_wikitext (id) {
         return
       }
       if (!this.code_type) {
-        if (!this.last_col_pipes) {
-          text = text.replace(/\x20{6,}/, '   ')
+        text = text.replace(/\x20{6,}/, '   ')
+        if (this.in_td) {
           text = text.replace(/^(&nbsp;)+\s*$/, '_FCKG_BLANK_TD_')
+          text = text.replace(/(&nbsp;)+/, '\\__')
+        } else {
           text = text.replace(/(&nbsp;)+/, ' ')
         }
 
@@ -1722,50 +1822,10 @@ function parse_wikitext (id) {
 
   if (HTMLParserFont)   // HTMLParserFont start
   {
-    String.prototype.font_link_reconcile = function (v) {
-      if (v === 1) {
-        regex = /\[\[(.*?)(<font[^\>]+>)([^<]+(\]\])?)[^\>]+\/font>\s*(\]\])/gm
-      } else regex = /(<font[^\>\{]+>)\{\{(:?.*?)\|(:?.*?)<\/font>/gm
-
-      return (
-        this.replace(
-          regex,
-          function (m, a, b, c) {
-            a = a.replace(/\n/gm, '')
-            a = a.replace(/\s/gm, '')
-            a = a.replace(/[\[\]\{\}]/g, '')
-            a = a.replace(/\|/g, '')
-            c = c.replace(/\n/gm, '')
-            c = c.replace(/\s/gm, '')
-            c = c.replace(/[\[\]\}\{]/g, '')
-            if (v == 1) { c = '[[' + a + '|' + c + ']]' } else c = '{{' + b + '|' + c + '}}'
-
-            var val = prompt(LANG.plugins.ckgedit.font_err_1 + '\n' + c + '\n' + LANG.plugins.ckgedit.font_err_2)
-            if (val == null) {
-              if (ckgedit_to_dwedit) {
-                ckgedit_to_dwedit = false
-                return c
-              } else throw new Error(LANG.plugins.ckgedit.font_err_throw)
-            }
-            if (val) return val
-            return c
-          }
-        )
-      )
-    }
     if (HTMLParserFontInfix) {
       activeResults = activeResults.replace(/<\/font>\s{1}/gm, '</font>')
     }
-
-    if (fontConflict()) {
-      if (confirm(LANG.plugins.ckgedit.font_conflict)) return
-      var v = jQuery('#fontdel').val()
-      if (!v) {
-        jQuery('#dw__editform').append('<input type="hidden" id="fontdel" name="fontdel" value="del" />')
-      }
-    }
-    activeResults = activeResults.font_link_reconcile(1)
-    activeResults = activeResults.font_link_reconcile(2)
+    fontLinkReconcile()
 
     var regex = /\>\s+(\*\*|__|\/\/|'')\s+_\s+\1\s+<\/font>/gm
     activeResults = activeResults.replace(regex, function (m) {
@@ -1773,15 +1833,7 @@ function parse_wikitext (id) {
       return m
     })
 
-    activeResults = activeResults.replace(/\[\[(.*?)\|(<font[^\>]+>)(.*?)(<\/font>)\s*(\]\])\s*/gm, function (match, a, b, c) {
-      match = '[[' + a + '|' + c + ']]'
-      var v = jQuery('#fontdel').val()
-      if (!v) {
-        jQuery('#dw__editform').append('<input type="hidden" id="fontdel" name="fontdel" value="del" />')
-      }
-      return match
-    })
-
+    /** Remove font tag in headers */
     activeResults = activeResults.replace(/(\s*={2,})\s*(.*?)(<font[^\>]+>)(.*?)(<\/font>)(.*?)\s*\1/gm, function (match) {
       match = match.replace(/<\/font>/g, ' ')
       match = match.replace(/<font.*?>/g, ' ')
