@@ -522,6 +522,9 @@ function parse_wikitext (id) {
     constructor (prevText) {
       this.prevText = prevText
       this.attr = {}
+      this.noBrTagOpen = false
+      this.noSpaceTagEnd = false
+      this.fontObj = null
     }
 
     /**
@@ -530,67 +533,90 @@ function parse_wikitext (id) {
      *    not processed.
      */
     close (activeResults) {
+      let parsedText
+      if (this.fontObj) {
+        parsedText = this.parseFontText(activeResults)
+      } else {
+        parsedText = this.parseText(activeResults)
+      }
+      return this.prevText + (this.noBrTagOpen ? '' : '\n') + parsedText +
+        (this.noSpaceTagEnd ? '' : ' ')
+    }
+
+    parseText (activeResults) {
+      return activeResults
+    }
+
+    parseFontText (activeResults) {
+      let fontOpen = '<font ' +
+        (this.fontObj.fontSize || 'inherit') + '/' +
+        (this.fontObj.fontFamily || 'inherit') + ';;' +
+        (this.fontObj.fontColor || 'inherit') + ';;' +
+        (this.fontObj.fontBgcolor || 'inherit') + '>'
+      let inherits = fontOpen.match(/inherit/g)
+      if (inherits && inherits.length < 3) {
+        HTMLParserFontInfix = true
+      }
+      HTMLParserFont = true
+      return fontOpen + activeResults + '</font>'
     }
 
     setAttr (attr, parser) {
-      if (attr.name == 'class' && attr.value == 'np_break'){
-        return
-      } 
-
-      if (attr.name == 'class') {
-        if (attr.value == 'curid') {
+      if (attr.name === 'class' && attr.value === 'np_break') {
+        this.noBrTagOpen = true
+      } else if (attr.name === 'class') {
+        if (attr.value === 'curid') {
           this.curid = true
-        } else if (attr.value == 'multi_p_open') {
+        } else if (attr.value === 'multi_p_open') {
           parser.in_multi_plugin = true
           HTMLParser_MULTI_LINE_PLUGIN = true
-        } else if (attr.value == 'multi_p_close') {
+        } else if (attr.value === 'multi_p_close') {
           parser.in_multi_plugin = false
         } else if (attr.value.match(geshi_classes)) {
-          tag = 'blank'
+          this.noBrTagOpen = true
           this.geshi = true
-          break
         }
+      } else if (!ckgedit_xcl_styles && attr.name === 'style') {
+        this.noBrTagOpen = true
+        this.noSpaceTagEnd = true
+        parser.using_fonts = true
+        this.setFontAttr(attr.value)
+      }
+    }
+
+    setFontAttr (fontAttrValue) {
+      this.fontObj = {}
+      let matches = fontAttrValue.match(/font-family:\s*([\w\-\s,]+);?/)
+      if (matches) {
+        this.fontObj.fontFamily = matches[1]
       }
 
-      if (tag == 'span' && !ckgedit_xcl_styles) {
-        if (attr.name == 'style') {
-          if (!this.in_font) activeResults += '__STYLE__'
-          this.in_font = true
-          this.using_fonts = true
-          matches = attr.value.match(/font-family:\s*([\w\-\s,]+);?/)
-          if (matches) {
-            this.font_family = matches[1]
-          }
-
-          // matches = attr.value.match(/font-size:\s*(\d+(\w+|%));?/);
-          matches = attr.value.match(/font-size:\s*(.*)/)
-          if (matches) {
-            matches[1] = matches[1].replace(/;/, '')
-            this.font_size = matches[1]
-          }
-          matches = attr.value.match(/font-weight:\s*(\w+);?/)
-          if (matches) {
-            this.font_weight = matches[1]
-          }
-          matches = attr.value.match(/.*?color:\s*(.*)/)
-          var bgcolor_found = false
-          if (matches) {
-            matches[1] = matches[1].replace(/;/, '')
-            if (matches[0].match(/background/)) {
-              this.font_bgcolor = matches[1]
-            } else {
-              this.font_color = matches[1]
-            }
-          }
-          if (!bgcolor_found) {  // catch MS Word which uses background:color-name instead of background-color:color-name
-            matches = attr.value.match(/background:\s*(\w+)/)
-            if (matches && matches[0].match(/background/)) {
-              this.font_bgcolor = matches[1]
-            }
-          }
+      // matches = fontAttrValue.match(/font-size:\s*(\d+(\w+|%));?/);
+      matches = fontAttrValue.match(/font-size:\s*(.*)/)
+      if (matches) {
+        matches[1] = matches[1].replace(/;/, '')
+        this.fontObj.fontSize = matches[1]
+      }
+      matches = fontAttrValue.match(/font-weight:\s*(\w+);?/)
+      if (matches) {
+        this.fontObj.fontWeight = matches[1]
+      }
+      matches = fontAttrValue.match(/.*?color:\s*(.*)/)
+      let bgcolorFound = false
+      if (matches) {
+        matches[1] = matches[1].replace(/;/, '')
+        if (matches[0].match(/background/)) {
+          this.fontObj.fontBgcolor = matches[1]
+        } else {
+          this.fontObj.fontColor = matches[1]
         }
       }
-
+      if (!bgcolorFound) {  // catch MS Word which uses background:color-name instead of background-color:color-name
+        matches = fontAttrValue.match(/background:\s*(\w+)/)
+        if (matches && matches[0].match(/background/)) {
+          this.fontObj.fontBgcolor = matches[1]
+        }
+      }
     }
   }
 
@@ -611,15 +637,15 @@ function parse_wikitext (id) {
     tr_no: 0,
     current_row: false,
     /**
-     * nestedTables - an array of tables currently in the hierarchy.
+     * tableStack - an array of tables currently in the hierarchy.
      * @type {Array<TableObj>}
      */
-    nestedTables: [],
+    tableStack: [],
     /**
-     * nestedTables - an array of spans currently in the hierarchy.
+     * spanStack - an array of spans currently in the hierarchy.
      * @type {Array<SpanObj>}
      */
-    nestedSpans: [],
+    spanStack: [],
     in_multi_plugin: false,
     is_rowspan: false,
     list_level: 0,
@@ -706,7 +732,7 @@ function parse_wikitext (id) {
           if (tag == 'sup') return
         }
         if (tag == 'ol' || tag == 'ul') {
-          if (this.nestedTables.length > 0 && !this.list_level) {
+          if (this.tableStack.length > 0 && !this.list_level) {
             activeResults += '\n'
           }
           this.prev_list_level = this.list_level
@@ -768,16 +794,16 @@ function parse_wikitext (id) {
         }
 
         if (tag === 'table') {
-          this.nestedTables.push(new TableObj(activeResults))
+          this.tableStack.push(new TableObj(activeResults))
           activeResults = ''
           this.in_table = true
         } else if (tag === 'tr') {
-          let currTable = this.nestedTables[this.nestedTables.length - 1]
+          let currTable = this.tableStack[this.tableStack.length - 1]
           currTable.startRow()
         } else if (tag === 'td' || tag === 'th') {
           // all rowspan and colspan placeholders will be inserted after this
           //    cell is closed (or the line is closed)
-          let currTable = this.nestedTables[this.nestedTables.length - 1]
+          let currTable = this.tableStack[this.tableStack.length - 1]
           currTable.startCell(tag)
           this.in_td = true
         }
@@ -790,7 +816,7 @@ function parse_wikitext (id) {
         var dwfck_note = false
 
         if (tag === 'span') {
-          this.nestedSpans.push(new SpanObj(activeResults))
+          this.spanStack.push(new SpanObj(activeResults))
           activeResults = ''
         }
 
@@ -798,7 +824,7 @@ function parse_wikitext (id) {
           // if(!confirm(tag + ' ' + attrs[i].name + '="' + attrs[i].escaped + '"')) exit;
           if (tag === 'td' || tag === 'th') {
             try {
-              let currTable = this.nestedTables[this.nestedTables.length - 1]
+              let currTable = this.tableStack[this.tableStack.length - 1]
               if (attrs[i].name === 'align' || attrs[i].name === 'class') {
                 currTable.getCurrentCell().setAlign(attrs[i])
               } else if (attrs[i].name === 'colspan') {
@@ -827,7 +853,7 @@ function parse_wikitext (id) {
             return
           }
           if (tag === 'span') {
-            this.nestedSpans[this.nestedSpans.length - 1].setAttr(attrs[i])
+            this.spanStack[this.spanStack.length - 1].setAttr(attrs[i], this)
           }
 
           if (tag == 'a') {
@@ -1105,7 +1131,7 @@ function parse_wikitext (id) {
                 this.code_type = 'file'
               }
               HTMLParser_PRE = true
-              if (this.nestedTables.length > 0) tag = 'pre_td'
+              if (this.tableStack.length > 0) tag = 'pre_td'
               break
             }
           } else if (tag == 'img') {
@@ -1224,7 +1250,7 @@ function parse_wikitext (id) {
           }
 
           HTMLParser_LBR = true
-          if (this.nestedTables.length > 0 || this.list_started) {
+          if (this.tableStack.length > 0 || this.list_started) {
             // There are the cases where a '\n' is not supposed to appear
             // in the final wiki code.
             // Use `br_same_line` ('\\\\ ') instead
@@ -1307,7 +1333,7 @@ function parse_wikitext (id) {
         }
 
         if (this.in_endnotes && tag == 'a') return
-        if (this.code_type && tag == 'span') tag = 'blank'
+        if (tag === 'span') tag = 'blank'
         if (this.mfile && !this.attr) {
           this.attr = this.mfile
         }
@@ -1363,7 +1389,7 @@ function parse_wikitext (id) {
     },
 
     end: function (tag) {
-      if (format_chars[tag] && (this.in_font || this.in_header)) {
+      if (format_chars[tag] && this.in_header) {
         activeResults += ' '
         if (tag == 'sup' || tag == 'sub' || tag == 'del' || tag == 'strike' || tag == 's') {
           var t = 'temp_c' + tag
@@ -1391,26 +1417,10 @@ function parse_wikitext (id) {
         this.is_smiley = false
         if (tag != 'li') return
       }
-      if (tag == 'span' && this.in_font && !ckgedit_xcl_styles) {
-        tag = 'font'
-        // <font 18pt/garamond;;color;;background_color>
-        var font_str = '<font ' + this.font_size + '/' + this.font_family + ';;' + this.font_color + ';;' + this.font_bgcolor + '>'
-        var inherits = font_str.match(/(inherit)/g)
-        if (inherits && inherits.length < 3) HTMLParserFontInfix = true
-        var font_start = activeResults.lastIndexOf('__STYLE__')
-        activeResults = activeResults.splice(font_start, 9, font_str)
-        activeResults = activeResults.replace(/_FORMAT_SPACE_<font/m, '<font')
-        this.font_size = 'inherit'
-        this.font_family = 'inherit'
-        this.font_color = 'inherit'
-        this.font_bgcolor = 'inherit'
-        this.in_font = false
-        HTMLParserFont = true
-        activeResults = activeResults.replace(/__STYLE__/g, '')
-      }
-      if (tag == 'span' && this.curid) {
-        this.curid = false
-        return
+      if (tag === 'span') {
+        let currSpan = this.spanStack.pop()
+        activeResults = currSpan.close(activeResults)
+        tag = 'blank'
       }
       if (tag == 'dl' && this.downloadable_code) {
         this.downloadable_code = false
@@ -1422,7 +1432,6 @@ function parse_wikitext (id) {
         return
       }
 
-      if (this.code_type && tag == 'span') tag = 'blank'
       var current_tag = tag
       if (this.footnote) {
         tag = 'fn_end'
@@ -1431,8 +1440,8 @@ function parse_wikitext (id) {
         this.xcl_markup = false
         return
       } else if (tag === 'table') {
-        let finishedTable = this.nestedTables.pop()
-        this.in_table = !!this.nestedTables.length
+        let finishedTable = this.tableStack.pop()
+        this.in_table = !!this.tableStack.length
         activeResults = finishedTable.close(activeResults)
         return
       }
@@ -1494,7 +1503,7 @@ function parse_wikitext (id) {
       }
 
       if (current_tag === 'td' || current_tag === 'th') {
-        let currTable = this.nestedTables[this.nestedTables.length - 1]
+        let currTable = this.tableStack[this.tableStack.length - 1]
         currTable.closeCell(activeResults)
         this.in_td = false
         activeResults = ''
