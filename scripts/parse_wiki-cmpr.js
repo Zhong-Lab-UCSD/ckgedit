@@ -6,27 +6,125 @@ function parse_wikitext (id) {
   }
   var useComplexTables = getComplexTables()
 
-  function fontConflict () {
+  function fontLinkReconcile () {
     // let regex = /<font\s*((?!>)[\s\S])*?>\s+(\*\*|__|\/\/|'')\s+_\s+\1\s+<\/font>/gm
     // activeResults = activeResults.replace(regex, function (m) {
     //   m = m.replace(/\s+/g, '')
     //   return m
     // })
 
+    let promptFunction = (match, proposal) => {
+      let val = window.prompt(LANG.plugins.ckgedit.font_err_1 + '\nFrom:\n' +
+        match + '\nTo:\n' + proposal + '\n' + LANG.plugins.ckgedit.font_err_2)
+      if (val == null) {
+        if (ckgedit_to_dwedit) {
+          ckgedit_to_dwedit = false
+          return proposal
+        } else throw new Error(LANG.plugins.ckgedit.font_err_throw)
+      }
+      if (val) return val
+      return proposal
+    }
+
     /**
+     * NOTE: nested `<font> </font>`, `[[ ]]` and `{{ }}` is not considered
+     * here.
+     *
      * This matches if there are `<font> </font>` within links `[[ ]]`.
      */
-    let regex = /\[\[((?!]])[\s\S])*?<font\s*((?!>)[\s\S])*?>([\s\S]*?)(<\/font>((?!\[\[)[\s\S])*?]])/gim
-    if (activeResults.match(regex)) return true
+    let regex = /\[\[((?:(?!]])[\s\S])*?)(<font\s*(?:(?!>)[\s\S])*?>)((?:(?!]])[\s\S])*?)<\/font>([\s\S]*?)]]/gim
+    if (activeResults.match(regex)) {
+      activeResults = activeResults.replace(
+        regex, (match, linkToFont, fontStart, insideFont, fontToLink) => {
+          return promptFunction(match,
+            fontStart + '[[' + linkToFont + insideFont + fontToLink +
+            ']]</font>'
+          )
+        }
+      )
+    }
 
     /**
      * This matches if there are `<font> </font>` within images (image captions)
      * or plugins `{{ }}`.
      */
-    regex = /\{\{((?!}})[\s\S])*?<font\s*((?!>)[\s\S])*?>([\s\S]*?)(<\/font>((?!\{\{)[\s\S])*?}})/gim
-    if (activeResults.match(regex)) return true
+    regex = /\{\{((?:(?!}})[\s\S])*?)(<font\s*(?:(?!>)[\s\S])*?>)((?:(?!}})[\s\S])*?)<\/font>([\s\S]*?)}}/gim
+    if (activeResults.match(regex)) {
+      activeResults = activeResults.replace(
+        regex, (match, linkToFont, fontStart, insideFont, fontToLink) => {
+          return promptFunction(match,
+            fontStart + '{{' + linkToFont + insideFont + fontToLink +
+            '}}</font>'
+          )
+        }
+      )
+    }
 
-    return false
+    /**
+     * These matches if `<font> </font>` and links `[[ ]]` are interlaced.
+     * (technically this should never happen)
+     *
+     * First `[[ <font> ]] </font>`
+     */
+    regex = /\[\[((?:(?!]])[\s\S])*?)(<font\s*(?:(?!>)[\s\S])*?>)((?:(?!<\/font>)[\s\S])*?]][\s\S]*?)<\/font>/gim
+    if (activeResults.match(regex)) {
+      activeResults = activeResults.replace(
+        regex, (match, linkToFont, fontStart, insideFont) => {
+          // Note that `]]` is within capture group `insideFont`
+          return promptFunction(match,
+            fontStart + '[[' + linkToFont + insideFont + '</font>'
+          )
+        }
+      )
+    }
+
+    /**
+     * Then `<font> [[ </font> ]]`
+     */
+    regex = /(<font\s*(?:(?!>)[\s\S])*?>)((?:(?!<\/font>)[\s\S])*?\[\[(?:(?!]])[\s\S])*?)<\/font>([\s\S]*?)]]/gim
+    if (activeResults.match(regex)) {
+      activeResults = activeResults.replace(
+        regex, (match, fontStart, insideFont, fontToLink) => {
+          // Note that `[[` is within capture group `insideFont`
+          return promptFunction(match,
+            fontStart + insideFont + fontToLink + ']]</font>'
+          )
+        }
+      )
+    }
+
+    /**
+     * These matches if `<font> </font>` and links `{{ }}` are interlaced.
+     * (technically this should never happen)
+     *
+     * First `{{ <font> }} </font>`
+     */
+    regex = /\{\{((?:(?!}})[\s\S])*?)(<font\s*(?:(?!>)[\s\S])*?>)((?:(?!<\/font>)[\s\S])*?}}[\s\S]*?)<\/font>/gim
+    if (activeResults.match(regex)) {
+      activeResults = activeResults.replace(
+        regex, (match, linkToFont, fontStart, insideFont) => {
+          // Note that `}}` is within capture group `insideFont`
+          return promptFunction(match,
+            fontStart + '{{' + linkToFont + insideFont + '</font>'
+          )
+        }
+      )
+    }
+
+    /**
+     * Then `<font> {{ </font> }}`
+     */
+    regex = /(<font\s*(?:(?!>)[\s\S])*?>)((?:(?!<\/font>)[\s\S])*?\{\{(?:(?!}})[\s\S])*?)<\/font>([\s\S]*?)}}/gim
+    if (activeResults.match(regex)) {
+      activeResults = activeResults.replace(
+        regex, (match, fontStart, insideFont, fontToLink) => {
+          // Note that `{{` is within capture group `insideFont`
+          return promptFunction(match,
+            fontStart + insideFont + fontToLink + '}}</font>'
+          )
+        }
+      )
+    }
   }
   //   /**
   //      table debugging code;
@@ -73,45 +171,6 @@ function parse_wikitext (id) {
   //   }
   //   return true
   // }
-
-  function getTableDokuCode (table) {
-    let tableResult = ''
-    let complexTableBegin = '~~TABLE_CELL_WRAP_START~~<WRAP>\n'
-    let complexTableEnd = '\n</WRAP>~~TABLE_CELL_WRAP_STOP~~'
-    for (let i = 0; i < table.rows.length; i++) {
-      let type = null
-      for (let col = 0; col < table.rows[i].length; col++) {
-        let currCell = table.rows[i][col]
-        if (currCell === TABLE_ROW_SPAN || currCell === TABLE_ROW_SPAN_HEADER) {
-          tableResult += (currCell === TABLE_ROW_SPAN ? '|' : '^') +
-            markup['row_span']
-        } else if (currCell === TABLE_COL_SPAN) {
-          // TABLE_COL_SPAN is just a blank string
-          // `type` is previous type
-          tableResult += type
-        } else {
-          type = currCell.type === 'td' ? '|' : '^'
-          tableResult += type
-          var align = currCell.align ? currCell.align : false
-          if (align === 'center' || align === 'right') {
-            tableResult += '  '
-          }
-
-          if (currCell.complexContent) {
-            tableResult += complexTableBegin + currCell.text + complexTableEnd
-          } else {
-            tableResult += currCell.text
-          }
-          if (align === 'center' || align === 'left') {
-            tableResult += '  '
-          }
-        }
-      }
-
-      tableResult += '|\n'
-    }
-    return tableResult
-  }
 
   window.dwfckTextChanged = false
   if (id != 'bakup') draft_delete()
@@ -226,7 +285,6 @@ function parse_wikitext (id) {
   var HTMLParser_LBR = false
   var HTMLParser_PRE = false
   var HTMLParser_Geshi = false
-  var HTMLParser_TABLE = false
   var HTMLParser_COLSPAN = false
   var HTMLParser_FORMAT_SPACE = false
   var HTMLParser_MULTI_LINE_PLUGIN = false
@@ -250,9 +308,292 @@ function parse_wikitext (id) {
   }
   String.frasl = new RegExp('⁄\|&frasl;\|&#8260;\|&#x2044;', 'g')
   geshi_classes = new RegExp(geshi_classes)
-  const TABLE_ROW_SPAN = 1
-  const TABLE_ROW_SPAN_HEADER = 2
-  const TABLE_COL_SPAN = 10
+
+  /**
+   * @class
+   * TableObj - an object for a table instance
+   * @property {number} currRowIndex - the row index of the current cursor
+   * @property {number} currColIndex - the column index of the current cursor
+   * @property {boolean} rowSpan - whether the current cursor is in a rowspan
+   * @property {number} start - the start offset of the table text in the
+   *    current context (body or nested tag)
+   * @property {Array<Array<TableCellObj|number>>} rows - the two-dimensional
+   *    array of cell objects
+   *    For the cell object, it will be either `TABLE_ROW_SPAN` ( = 1 ) for
+   *    rowspan placeholders, `TABLE_COL_SPAN` ( = 2 ) for colspan placeholders,
+   *    or a `TableCellObj` object.
+   * @property {Array<number>} pendingRowSpans - an sparse array of pending
+   *    number of rowspan cells from previous rows, for examples, if a
+   *    cell from last row at column index 3 has rowspan = 5, then
+   *    `pendingRowSpans[3] = 4` for the current row, when the rowspan
+   *    placeholder is inserted into `rows[currRowIndex]`, the value will be
+   *    decreased by 1, so `pendingRowSpans[3] = 3` for the next row.
+   * @property {Array<boolean>} pendingRowSpanIsHeader - an sparse array
+   *    indicating whether pending rowspan cell is from a `th` (`true`) or a
+   *    `td`.
+   *
+   * @constructor
+   * @param {string} prevText - previous Dokuwiki text, to be included when the
+   *    Dokuwiki code is generated.
+   */
+  var TableObj = class TableObj {
+    constructor (prevText) {
+      this.prevText = prevText
+      this.rows = []
+      this.pendingRowSpans = []
+      this.pendingRowSpanIsHeader = []
+    }
+
+    /**
+     * close the table and return the resulting Dokuwiki code up to the table
+     * @param {string} activeResults - the remaining `activeResults` that is
+     *    not processed (should not happen as there should be no valid text
+     *    between the last </tr> and the </table>)
+     */
+    close (activeResults) {
+      let tableResult = ''
+      for (let i = 0; i < this.rows.length; i++) {
+        let typeSeparator = null
+        for (let col = 0; col < this.rows[i].length; col++) {
+          let currCell = this.rows[i][col]
+          if (currCell === this.constructor.TABLE_ROW_SPAN ||
+            currCell === this.constructor.TABLE_ROW_SPAN_HEADER) {
+            tableResult +=
+              (currCell === this.constructor.TABLE_ROW_SPAN ? '|' : '^') +
+              this.constructor.MARKUP_ROW_SPAN
+          } else if (currCell === this.constructor.TABLE_COL_SPAN) {
+            // TABLE_COL_SPAN is just a blank string
+            // `type` is previous type
+            tableResult += typeSeparator
+          } else {
+            typeSeparator = currCell.type === 'th' ? '^' : '|'
+            tableResult += currCell.getText()
+          }
+        }
+        tableResult += '|\n'
+      }
+      return this.prevText + '\n\n' + tableResult
+    }
+
+    startRow () {
+      this.rows.push([])
+      // insert all colspan placeholders at the beginning
+      this.insertRowSpans()
+    }
+
+    /**
+     * Insert row span element at the current location if needed
+     *
+     */
+    insertRowSpans () {
+      let currentRow = this.rows[this.rows.length - 1]
+      while (this.pendingRowSpans[currentRow.length] > 0) {
+        this.pendingRowSpans[currentRow.length]--
+        currentRow.push(this.pendingRowSpanIsHeader[currentRow.length]
+          ? this.constructor.TABLE_ROW_SPAN_HEADER
+          : this.constructor.TABLE_ROW_SPAN)
+      }
+    }
+
+    startCell (tag) {
+      this.rows[this.rows.length - 1].push(new TableCellObj(tag))
+    }
+
+    closeCell (activeResults) {
+      let currentRow = this.rows[this.rows.length - 1]
+      let currCell = this.getCurrentCell()
+      currCell.close(activeResults)
+      /** Insert col span placeholders */
+      for (let col = 1; col < currCell.colSpan; col++) {
+        currentRow.push(this.constructor.TABLE_COL_SPAN)
+      }
+      /** Extend row span placeholders */
+      this.insertRowSpans()
+    }
+
+    getCurrentCell () {
+      let currentRow = this.rows[this.rows.length - 1]
+      return currentRow && currentRow[currentRow.length - 1]
+    }
+
+    setRowSpan (rowSpan) {
+      let currentRow = this.rows[this.rows.length - 1]
+      this.getCurrentCell().rowSpan = rowSpan
+      this.pendingRowSpans[currentRow.length - 1] = rowSpan - 1
+      this.extendRowSpans()
+    }
+
+    setColSpan (colSpan) {
+      this.getCurrentCell().colSpan = colSpan
+      this.extendRowSpans()
+    }
+
+    extendRowSpans () {
+      let currentRow = this.rows[this.rows.length - 1]
+      let currCell = this.getCurrentCell()
+      for (let col = 1; col < currCell.colSpan; col++) {
+        this.pendingRowSpans[currentRow.length - 1 + col] =
+          currCell.rowSpan - 1
+        this.pendingRowSpanIsHeader[currentRow.length - 1 + col] =
+          (currCell.type === 'th')
+      }
+    }
+  }
+
+  TableObj.TABLE_ROW_SPAN = 1
+  TableObj.TABLE_ROW_SPAN_HEADER = 2
+  TableObj.TABLE_COL_SPAN = 10
+
+  TableObj.MARKUP_ROW_SPAN = ':::'
+
+  /**
+   * TableCellObj - an object for table cell elements
+   * @class
+   * @property {string} type - the type of the table cell (`th` or `td`)
+   * @property {string} text - the Dokuwiki text within the cell when it is
+   *    closed
+   * @property {string} [align] - align information for the cell
+   * @property {number} [rowSpan] - row span information for the cell
+   * @property {number} [colSpan] - col span information for the cell
+   *
+   * @constructor
+   * @param {string} tag - HTML tag for the table cell (`th` or `td`)
+   */
+  var TableCellObj = class TableCellObj {
+    constructor (tag) {
+      this.type = tag
+      this.text = ''
+      this.align = null
+    }
+
+    /**
+     * Close the cell, store the resulting Dokuwiki code in its `text`
+     * @param {string} activeResults - the remaining `activeResults` that is
+     *    not processed in the cell
+     */
+    close (activeResults) {
+      if (activeResults.endsWith(markup_end['p'])) {
+        activeResults = activeResults.substring(
+          0, activeResults.length - markup_end['p'].length)
+      }
+      this.text = activeResults || ''
+    }
+
+    getText () {
+      let result = (this.type === 'td') ? '|' : '^'
+      if (this.text) {
+        let align = this.align ? this.align : false
+        if (align === 'center' || align === 'right') {
+          result += '  '
+        }
+        if (this.text.match(/[\n|^]/)) {
+          result += this.constructor.complexTableBegin +
+            this.text + this.constructor.complexTableEnd
+        } else {
+          result += this.text
+        }
+        if (align === 'center' || align === 'left') {
+          result += '  '
+        }
+      } else {
+        result += ' '
+      }
+      return result
+    }
+
+    setAlign (attr) {
+      if (attr.name === 'align') {
+        this.align = attr.escaped
+      } else if (attr.name === 'class') {
+        let matches
+        if ((matches = attr.value.match(/\s*(\w+)align/))) {
+          this.align = matches[1]
+        } else if ((matches = attr.value.match(/(left|center|right)/))) {
+          this.align = matches[1]
+        }
+      }
+    }
+  }
+
+  TableCellObj.complexTableBegin = '~~TABLE_CELL_WRAP_START~~<WRAP>\n'
+  TableCellObj.complexTableEnd = '\n</WRAP>~~TABLE_CELL_WRAP_STOP~~'
+
+  var SpanObj = class SpanObj {
+    constructor (prevText) {
+      this.prevText = prevText
+      this.attr = {}
+    }
+
+    /**
+     * close the span and return the resulting Dokuwiki code up to the span
+     * @param {string} activeResults - the remaining `activeResults` that is
+     *    not processed.
+     */
+    close (activeResults) {
+    }
+
+    setAttr (attr, parser) {
+      if (attr.name == 'class' && attr.value == 'np_break'){
+        return
+      } 
+
+      if (attr.name == 'class') {
+        if (attr.value == 'curid') {
+          this.curid = true
+        } else if (attr.value == 'multi_p_open') {
+          parser.in_multi_plugin = true
+          HTMLParser_MULTI_LINE_PLUGIN = true
+        } else if (attr.value == 'multi_p_close') {
+          parser.in_multi_plugin = false
+        } else if (attr.value.match(geshi_classes)) {
+          tag = 'blank'
+          this.geshi = true
+          break
+        }
+      }
+
+      if (tag == 'span' && !ckgedit_xcl_styles) {
+        if (attr.name == 'style') {
+          if (!this.in_font) activeResults += '__STYLE__'
+          this.in_font = true
+          this.using_fonts = true
+          matches = attr.value.match(/font-family:\s*([\w\-\s,]+);?/)
+          if (matches) {
+            this.font_family = matches[1]
+          }
+
+          // matches = attr.value.match(/font-size:\s*(\d+(\w+|%));?/);
+          matches = attr.value.match(/font-size:\s*(.*)/)
+          if (matches) {
+            matches[1] = matches[1].replace(/;/, '')
+            this.font_size = matches[1]
+          }
+          matches = attr.value.match(/font-weight:\s*(\w+);?/)
+          if (matches) {
+            this.font_weight = matches[1]
+          }
+          matches = attr.value.match(/.*?color:\s*(.*)/)
+          var bgcolor_found = false
+          if (matches) {
+            matches[1] = matches[1].replace(/;/, '')
+            if (matches[0].match(/background/)) {
+              this.font_bgcolor = matches[1]
+            } else {
+              this.font_color = matches[1]
+            }
+          }
+          if (!bgcolor_found) {  // catch MS Word which uses background:color-name instead of background-color:color-name
+            matches = attr.value.match(/background:\s*(\w+)/)
+            if (matches && matches[0].match(/background/)) {
+              this.font_bgcolor = matches[1]
+            }
+          }
+        }
+      }
+
+    }
+  }
+
   HTMLParser(CKEDITOR.instances.wiki__text.getData(), {
     attribute: '',
     link_title: '',
@@ -271,39 +612,14 @@ function parse_wikitext (id) {
     current_row: false,
     /**
      * nestedTables - an array of tables currently in the hierarchy.
-     * @type {Array<Object>}
-     * Every table object should have the following properties:
-     * @property {number} currRowIndex - the row index of the current cursor
-     * @property {number} currColIndex - the column index of the current cursor
-     * @property {boolean} rowSpan - whether the current cursor is in a rowspan
-     * @property {number} start - the start offset of the table text in the
-     *    current context (body or nested tag)
-     * @property {Array<Object>} rows - the two-dimensional array of cell
-     *    objects
-     * @property {Array<number>} pendingRowSpans - an sparse array of pending
-     *    number of rowspan cells from previous rows, for examples, if a
-     *    cell from last row at column index 3 has rowspan = 5, then
-     *    `pendingRowSpans[3] = 4` for the current row, when the rowspan
-     *    placeholder is inserted into `rows[currRowIndex]`, the value will be
-     *    decreased by 1, so `pendingRowSpans[3] = 3` for the next row.
-     *
-     * @property {Array<boolean>} pendingRowSpanIsHeader - an sparse array
-     *    indicating whether pending rowspan cell is from a `th` (`true`) or a
-     *    `td`.
-     *
-     * For the cell object, it will be either `TABLE_ROW_SPAN` ( = 1 ) for
-     * rowspan placeholders, `TABLE_COL_SPAN` ( = 2 ) for colspan placeholders,
-     * or an object with the following properties:
-     *    @property {string} type - the type of the cell, either `th` or `td`
-     *    @property {string} text - everything contained within the cell
-     *    @property {number} [rowspan] - the number of rows this cell spans
-     *    @property {number} [colspan] - the number of columns this cell spans
-     *    @property {string} [align] - the horizontal alignment of the table
-     *      should be either `left`, `right` or `center`, if exists
-     *    @property {boolean} [complexContent] - whether a <WRAP> element is
-     *      needed (multi-line cell contents, for example)
+     * @type {Array<TableObj>}
      */
     nestedTables: [],
+    /**
+     * nestedTables - an array of spans currently in the hierarchy.
+     * @type {Array<SpanObj>}
+     */
+    nestedSpans: [],
     in_multi_plugin: false,
     is_rowspan: false,
     list_level: 0,
@@ -452,56 +768,17 @@ function parse_wikitext (id) {
         }
 
         if (tag === 'table') {
-          let newTableProperties = {
-            rowSpan: false,
-            currRowIndex: -1,
-            currColIndex: -1,
-            numOfTrs: 0,
-            start: activeResults.length,
-            rows: [],
-            pendingRowSpans: [],
-            pendingRowSpanIsHeader: []
-          }
-          if (this.nestedTables.length > 0) {
-            let currTable = this.nestedTables[this.nestedTables.length - 1]
-            let currCell =
-              currTable.rows[currTable.currRowIndex][currTable.currColIndex]
-            currCell.text = activeResults
-            currCell.complexContent = true
-          } else {
-            rootLevelResultsCache = activeResults
-          }
+          this.nestedTables.push(new TableObj(activeResults))
           activeResults = ''
-          this.nestedTables.push(newTableProperties)
+          this.in_table = true
         } else if (tag === 'tr') {
           let currTable = this.nestedTables[this.nestedTables.length - 1]
-          currTable.numOfTrs++
-          currTable.currRowIndex++
-          currTable.rows.push([])
-          // insert all colspan placeholders at the beginning
-          for (currTable.currColIndex = -1;
-            currTable.pendingRowSpans[currTable.currColIndex + 1] > 0;
-            currTable.currColIndex++
-          ) {
-            currTable.rows[currTable.currRowIndex].push(
-              currTable.pendingRowSpanIsHeader[currTable.currColIndex + 1]
-                ? TABLE_ROW_SPAN_HEADER : TABLE_ROW_SPAN
-            )
-            currTable.pendingRowSpans[currTable.currColIndex + 1]--
-          }
+          currTable.startRow()
         } else if (tag === 'td' || tag === 'th') {
           // all rowspan and colspan placeholders will be inserted after this
           //    cell is closed (or the line is closed)
           let currTable = this.nestedTables[this.nestedTables.length - 1]
-          let newCell = {
-            type: tag,
-            rowspan: 0,
-            colspan: 0,
-            text: ''
-          }
-          currTable.rows[currTable.currRowIndex].push(newCell)
-          currTable.currColIndex++
-          currTable.headerRow = currTable.headerRow || tag === 'th'
+          currTable.startCell(tag)
           this.in_td = true
         }
 
@@ -512,47 +789,22 @@ function parse_wikitext (id) {
         if (format_chars[tag]) this.format_tag = true
         var dwfck_note = false
 
+        if (tag === 'span') {
+          this.nestedSpans.push(new SpanObj(activeResults))
+          activeResults = ''
+        }
+
         for (var i = 0; i < attrs.length; i++) {
           // if(!confirm(tag + ' ' + attrs[i].name + '="' + attrs[i].escaped + '"')) exit;
           if (tag === 'td' || tag === 'th') {
             try {
               let currTable = this.nestedTables[this.nestedTables.length - 1]
-              let currCell =
-                currTable.rows[currTable.currRowIndex][currTable.currColIndex]
-              if (attrs[i].name === 'align') {
-                currCell.align = attrs[i].escaped
-              } else if (attrs[i].name === 'class') {
-                if (
-                  (matches = attrs[i].value.match(/\s*(\w+)align/))
-                ) {
-                  currCell.align = matches[1]
-                } else if (
-                  (matches = attrs[i].value.match(/(left|center|right)/))
-                ) {
-                  currCell.align = matches[1]
-                }
+              if (attrs[i].name === 'align' || attrs[i].name === 'class') {
+                currTable.getCurrentCell().setAlign(attrs[i])
               } else if (attrs[i].name === 'colspan') {
-                currCell.colspan = parseInt(attrs[i].value)
-                if (currCell.rowspan > 0) {
-                  for (let col = 1; col < currCell.colspan; col++) {
-                    currTable.pendingRowSpans[currTable.currColIndex + col] =
-                      currCell.rowspan - 1
-                    currTable.pendingRowSpanIsHeader[currTable.currColIndex + col] =
-                      (tag === 'th')
-                  }
-                }
+                currTable.setColSpan(parseInt(attrs[i].value))
               } else if (attrs[i].name === 'rowspan') {
-                currCell.rowspan = parseInt(attrs[i].value)
-                currTable.pendingRowSpans[currTable.currColIndex] =
-                  currCell.rowspan - 1
-                currTable.pendingRowSpanIsHeader[currTable.currColIndex] =
-                  (tag === 'th')
-                for (let col = 1; col < currCell.colspan; col++) {
-                  currTable.pendingRowSpans[currTable.currColIndex + col] =
-                    currCell.rowspan - 1
-                  currTable.pendingRowSpanIsHeader[currTable.currColIndex + col] =
-                    (tag === 'th')
-                }
+                currTable.setRowSpan(parseInt(attrs[i].value))
               }
             } catch (ignore) { }
           }
@@ -574,68 +826,8 @@ function parse_wikitext (id) {
             HTMLParser_Geshi = true
             return
           }
-          if (tag == 'span' && attrs[i].name == 'class') {
-            if (attrs[i].value == 'np_break') return
-          }
-
-          if (tag == 'span' && attrs[i].name == 'class') {
-            if (attrs[i].value == 'curid') {
-              this.curid = true
-              return
-            }
-            if (attrs[i].value == 'multi_p_open') {
-              this.in_multi_plugin = true
-              HTMLParser_MULTI_LINE_PLUGIN = true
-              return
-            }
-            if (attrs[i].value == 'multi_p_close') {
-              this.in_multi_plugin = false
-              return
-            }
-            if (attrs[i].value.match(geshi_classes)) {
-              tag = 'blank'
-              this.geshi = true
-              break
-            }
-          }
-
-          if (tag == 'span' && !ckgedit_xcl_styles) {
-            if (attrs[i].name == 'style') {
-              if (!this.in_font) activeResults += '__STYLE__'
-              this.in_font = true
-              this.using_fonts = true
-              matches = attrs[i].value.match(/font-family:\s*([\w\-\s,]+);?/)
-              if (matches) {
-                this.font_family = matches[1]
-              }
-
-              // matches = attrs[i].value.match(/font-size:\s*(\d+(\w+|%));?/);
-              matches = attrs[i].value.match(/font-size:\s*(.*)/)
-              if (matches) {
-                matches[1] = matches[1].replace(/;/, '')
-                this.font_size = matches[1]
-              }
-              matches = attrs[i].value.match(/font-weight:\s*(\w+);?/)
-              if (matches) {
-                this.font_weight = matches[1]
-              }
-              matches = attrs[i].value.match(/.*?color:\s*(.*)/)
-              var bgcolor_found = false
-              if (matches) {
-                matches[1] = matches[1].replace(/;/, '')
-                if (matches[0].match(/background/)) {
-                  this.font_bgcolor = matches[1]
-                } else {
-                  this.font_color = matches[1]
-                }
-              }
-              if (!bgcolor_found) {  // catch MS Word which uses background:color-name instead of background-color:color-name
-                matches = attrs[i].value.match(/background:\s*(\w+)/)
-                if (matches && matches[0].match(/background/)) {
-                  this.font_bgcolor = matches[1]
-                }
-              }
-            }
+          if (tag === 'span') {
+            this.nestedSpans[this.nestedSpans.length - 1].setAttr(attrs[i])
           }
 
           if (tag == 'a') {
@@ -1053,7 +1245,7 @@ function parse_wikitext (id) {
           return
         }
 
-        if (tag == 'b' || tag == 'i' && this.list_level) {
+        if (tag === 'b' || tag === 'i' && this.list_level) {
           if (activeResults.match(/(\/\/|\*)(\x20)+/)) {
             activeResults = activeResults.replace(/(\/\/|\*)(\x20+)\-/, '$1\n' + '$2-')
           }
@@ -1240,16 +1432,9 @@ function parse_wikitext (id) {
         return
       } else if (tag === 'table') {
         let finishedTable = this.nestedTables.pop()
-        if (this.nestedTables.length) {
-          let currTable = this.nestedTables[this.nestedTables.length - 1]
-          let currCell =
-            currTable.rows[currTable.currRowIndex][currTable.currColIndex]
-          activeResults = currCell.text
-        } else {
-          activeResults = rootLevelResultsCache
-        }
         this.in_table = !!this.nestedTables.length
-        activeResults += '\n\n' + getTableDokuCode(finishedTable) + '\n'
+        activeResults = finishedTable.close(activeResults)
+        return
       }
 
       if (this.geshi) {
@@ -1310,32 +1495,10 @@ function parse_wikitext (id) {
 
       if (current_tag === 'td' || current_tag === 'th') {
         let currTable = this.nestedTables[this.nestedTables.length - 1]
-        let currCell =
-          currTable.rows[currTable.currRowIndex][currTable.currColIndex]
-        if (activeResults.endsWith(markup_end['p'])) {
-          activeResults = activeResults.substring(
-            0, activeResults.length - markup_end['p'].length)
-        }
-        currCell.text = activeResults
-        if (currCell.text.includes('\n')) {
-          currCell.complexContent = true
-        }
-        activeResults = ''
-        for (let col = 1; col < currCell.colspan; col++) {
-          currTable.rows[currTable.currRowIndex].push(TABLE_COL_SPAN)
-          currTable.currColIndex++
-        }
+        currTable.closeCell(activeResults)
         this.in_td = false
-        // add all consecutive rowspan cells
-        for (; currTable.pendingRowSpans[currTable.currColIndex + 1] > 0;
-          currTable.currColIndex++
-        ) {
-          currTable.rows[currTable.currRowIndex].push(
-            currTable.pendingRowSpanIsHeader[currTable.currColIndex + 1]
-              ? TABLE_ROW_SPAN_HEADER : TABLE_ROW_SPAN
-          )
-          currTable.pendingRowSpans[currTable.currColIndex + 1]--
-        }
+        activeResults = ''
+        return
       } else if (current_tag.match(/h\d+/)) {
         this.in_header = false
       }
@@ -1413,8 +1576,7 @@ function parse_wikitext (id) {
       text = text.replace(/&#39;/g, "'")  // replace single quote entities with single quotes
       text = text.replace(/^(&gt;)+/, function (match, quotes) {
         return (match.replace(/(&gt;)/g, '\__QUOTE__'))
-      }
-      )
+      })
       // adjust spacing on multi-formatted strings
       activeResults = activeResults.replace(/([\/\*_])_FORMAT_SPACE_([\/\*_]{2})_FORMAT_SPACE_$/, '$1$2@@_SP_@@')
       if (text.match(/^&\w+;/)) {
@@ -1429,9 +1591,10 @@ function parse_wikitext (id) {
         return
       }
       if (!this.code_type) {
-        if (!this.last_col_pipes) {
-          text = text.replace(/\x20{6,}/, '   ')
-          text = text.replace(/^(&nbsp;)+\s*$/, '_FCKG_BLANK_TD_')
+        text = text.replace(/\x20{6,}/, '   ')
+        if (this.in_td) {
+          text = text.replace(/(&nbsp;)+\s/, '\\__')
+        } else {
           text = text.replace(/(&nbsp;)+/, ' ')
         }
 
@@ -1704,68 +1867,16 @@ function parse_wikitext (id) {
     }
   }
 
-  if (HTMLParser_TABLE) {
-    activeResults += '\n' + line_break_final + '\n'
-    var regex = new RegExp(HTMLParserParaInsert, 'g')
-    activeResults = activeResults.replace(regex, line_break_final + ' ')
-
-    // fix for colspans which have had text formatting which cause extra empty cells to be created
-    activeResults = activeResults.replace(/(\||\^)[ ]+(\||\^)\s$/g, '$1\n')
-    activeResults = activeResults.replace(/(\||\^)[ ]+(\||\^)/g, '$1')
-  }
-  // prevents valid empty td/th cells from being removed above
-  activeResults = activeResults.replace(/_FCKG_BLANK_TD_/g, ' ')
-
   if (HTMLParserOpenAngleBracket) {
     activeResults = activeResults.replace(/\/\/&lt;\/\/\s*/g, '&lt;')
   }
 
   if (HTMLParserFont)   // HTMLParserFont start
   {
-    String.prototype.font_link_reconcile = function (v) {
-      if (v === 1) {
-        regex = /\[\[(.*?)(<font[^\>]+>)([^<]+(\]\])?)[^\>]+\/font>\s*(\]\])/gm
-      } else regex = /(<font[^\>\{]+>)\{\{(:?.*?)\|(:?.*?)<\/font>/gm
-
-      return (
-        this.replace(
-          regex,
-          function (m, a, b, c) {
-            a = a.replace(/\n/gm, '')
-            a = a.replace(/\s/gm, '')
-            a = a.replace(/[\[\]\{\}]/g, '')
-            a = a.replace(/\|/g, '')
-            c = c.replace(/\n/gm, '')
-            c = c.replace(/\s/gm, '')
-            c = c.replace(/[\[\]\}\{]/g, '')
-            if (v == 1) { c = '[[' + a + '|' + c + ']]' } else c = '{{' + b + '|' + c + '}}'
-
-            var val = prompt(LANG.plugins.ckgedit.font_err_1 + '\n' + c + '\n' + LANG.plugins.ckgedit.font_err_2)
-            if (val == null) {
-              if (ckgedit_to_dwedit) {
-                ckgedit_to_dwedit = false
-                return c
-              } else throw new Error(LANG.plugins.ckgedit.font_err_throw)
-            }
-            if (val) return val
-            return c
-          }
-        )
-      )
-    }
     if (HTMLParserFontInfix) {
       activeResults = activeResults.replace(/<\/font>\s{1}/gm, '</font>')
     }
-
-    if (fontConflict()) {
-      if (confirm(LANG.plugins.ckgedit.font_conflict)) return
-      var v = jQuery('#fontdel').val()
-      if (!v) {
-        jQuery('#dw__editform').append('<input type="hidden" id="fontdel" name="fontdel" value="del" />')
-      }
-    }
-    activeResults = activeResults.font_link_reconcile(1)
-    activeResults = activeResults.font_link_reconcile(2)
+    fontLinkReconcile()
 
     var regex = /\>\s+(\*\*|__|\/\/|'')\s+_\s+\1\s+<\/font>/gm
     activeResults = activeResults.replace(regex, function (m) {
@@ -1773,15 +1884,7 @@ function parse_wikitext (id) {
       return m
     })
 
-    activeResults = activeResults.replace(/\[\[(.*?)\|(<font[^\>]+>)(.*?)(<\/font>)\s*(\]\])\s*/gm, function (match, a, b, c) {
-      match = '[[' + a + '|' + c + ']]'
-      var v = jQuery('#fontdel').val()
-      if (!v) {
-        jQuery('#dw__editform').append('<input type="hidden" id="fontdel" name="fontdel" value="del" />')
-      }
-      return match
-    })
-
+    /** Remove font tag in headers */
     activeResults = activeResults.replace(/(\s*={2,})\s*(.*?)(<font[^\>]+>)(.*?)(<\/font>)(.*?)\s*\1/gm, function (match) {
       match = match.replace(/<\/font>/g, ' ')
       match = match.replace(/<font.*?>/g, ' ')
