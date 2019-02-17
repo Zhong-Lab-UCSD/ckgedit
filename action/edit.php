@@ -1172,6 +1172,11 @@ CKEDITOR_REPLACE;
             ),
             $text
         );
+
+        if (!$skip_styling) {
+            // replace &lt;font back so that the default renderer can render
+            $text = preg_replace('/&lt;(?=\/?font)/msi', "<", $text);
+        }
     
         $instructions = p_get_instructions("=== header ==="); // loads DOKU_PLUGINS array --M.T. Dec 22 2009
         
@@ -1195,8 +1200,13 @@ CKEDITOR_REPLACE;
            It is a significant contribution to the functionality of ckgEdit
         */
         foreach ($instructions as $instruction) {
-            if ($instruction[0] == 'plugin') {
-                $Renderer->doc .= $instruction[1][3];
+            error_log(json_encode($instruction));
+            if ($instruction[0] === 'plugin') {
+                if($skip_styling || $instruction[1][0] !== 'ckgedit_font') {
+                    $Renderer->doc .= $instruction[1][3];
+                } else {
+                    call_user_func_array(array(&$Renderer, 'plugin'), $instruction[1]);
+                }
             } else {
                 // Execute the callback against the Renderer
                 call_user_func_array(array(&$Renderer, $instruction[0]), $instruction[1]);
@@ -1210,37 +1220,6 @@ CKEDITOR_REPLACE;
         $data = array($mode,& $Renderer->doc);
         trigger_event('RENDERER_CONTENT_POSTPROCESS', $data);
         $xhtml = $Renderer->doc;
-        if (!$skip_styling) {  // create font styles from font plugin markup for html display
-            $xhtml = preg_replace_callback(
-                '|&amp;lt;font\s+(.*?)/([\w ,\-]+);;([\(\)),\w,\s\#]+);;([\(\)),\w,\s\#]+)&gt;(.*?)&amp;lt;/font&gt;|ms',
-                function ($matches) {
-                    $count = 0;
-                    $str='';
-                    if ($matches[3] && $matches[3] != 'inherit') {
-                        $str .= '<span style = "color:' . $matches[3] .'">';
-                        $count++;
-                    }
-                    if ($matches[1] && $matches[1] != 'inherit') {
-                        $str .= '<span style = "font-size:' . $matches[1] .'">';
-                        $count++;
-                    }
-                    if ($matches[2] && $matches[2] != 'inherit') {
-                        $str .= '<span style = "font-family:' . $matches[2] .'">';
-                        $count++;
-                    }
-                    if ($matches[4] && $matches[4] != 'inherit') {
-                        $str .= '<span style = "background-color:' . $matches[4] .'">';
-                        $count++;
-                    }
-                    $str .= $matches[5];
-                    for ($i =0; $i<$count; $i++) {
-                        $str .= '</span>';
-                    }
-                    return $str;
-                },
-                $xhtml
-            );
-        }
             
         /**
         * Alternative to  the one liner at 1179:  $xhtml = str_replace(array('oiwikio','ciwikic'),array('oIWIKIo','cIWIKIc'),$xhtml);

@@ -85,6 +85,7 @@ class syntax_plugin_ckgedit_specials extends DokuWiki_Syntax_Plugin
     {
         $class = "";
         $xhtml = "";
+        error_log("<specials> handler: $match, $state, $pos");
         switch ($state) {
             case DOKU_LEXER_SPECIAL:
                 if (preg_match('/OPEN/', $match)) {
@@ -112,8 +113,10 @@ class syntax_plugin_ckgedit_specials extends DokuWiki_Syntax_Plugin
      */
     public function render($mode, Doku_Renderer $renderer, $data)
     {
+        error_log("<specials> render: $mode");
         if ($mode == 'xhtml') {
             list($state, $xhtml) = $data;
+            error_log("<specials> render state: $state, $xhtml");
             switch ($state) {
                 case DOKU_LEXER_SPECIAL:
                     $renderer->doc .=  DOKU_LF . $xhtml . DOKU_LF;

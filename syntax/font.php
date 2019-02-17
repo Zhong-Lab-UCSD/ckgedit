@@ -25,34 +25,49 @@ class syntax_plugin_ckgedit_font extends DokuWiki_Syntax_Plugin {
     function getType(){ return 'formatting'; }
     function getAllowedTypes() { return array('formatting', 'substition', 'disabled'); }   
     function getSort(){ return 158; }
-    function connectTo($mode) { $this->Lexer->addEntryPattern('<font.*?>(?=.*?</font>)',$mode,'plugin_ckgedit_font'); }
-    function postConnect() { $this->Lexer->addExitPattern('</font>','plugin_ckgedit_font'); }
+    function connectTo($mode) {
+        $this->Lexer->addEntryPattern('<font\s*(?:(?!>).)*?>',$mode,'plugin_ckgedit_font');
+    }
+    function postConnect() {
+        $this->Lexer->addEntryPattern('<font\s*(?:(?!>).)*?>','plugin_ckgedit_font','plugin_ckgedit_font');
+        $this->Lexer->addExitPattern('</font>','plugin_ckgedit_font');
+    }
  
  
     /**
      * Handle the match
      */
     function handle($match, $state, $pos, Doku_Handler $handler){
-
-
+        error_log("<font> handler: $match, $state, $pos");
         switch ($state) {
-          case DOKU_LEXER_ENTER :
+            case DOKU_LEXER_ENTER :
                 list($size, $face) = preg_split("/\//u", substr($match, 6, -1), 2);
                 if(isset($size) && strpos($size,':') !== false) {                        
-                        list($size,$weight) = explode(':',$size); 
-                        $size = "font-size:$size;";
-                        if(isset($weight) && $weight) {
-                           list($weight,$fstyle) = explode(',',$weight);                           
-                           $size .= " font-weight:$weight; ";
-                           if($fstyle) $size .= " font-style:$fstyle; ";
+                    list($size,$weight) = explode(':',$size);
+                    if (isset($size) && $size !== 'inherit') {
+                        $size = "font-size: $size; ";
+                    } else {
+                        $size = '';
+                    }
+                    if(isset($weight) && $weight) {
+                        list($weight, $fstyle) = explode(',',$weight);                           
+                        if (isset($weight) && $weight !== 'inherit') {
+                            $size .= " font-weight: $weight;";
                         }
-
+                        if (isset($fstyle) && $fstyle !== 'inherit') {
+                            $size .= " font-style: $fstyle; ";
+                        }
+                    }
                 }
-                else $size = "font-size:$size;";
+                else if (isset($size) && $size !== 'inherit') {
+                    $size = "font-size: $size;";
+                } else {
+                    $size = '';
+                }
                 return array($state, array($size, $face));
  
-          case DOKU_LEXER_UNMATCHED :  return array($state, $match);
-          case DOKU_LEXER_EXIT :       return array($state, '');
+            case DOKU_LEXER_UNMATCHED :  return array($state, $match);
+            case DOKU_LEXER_EXIT :       return array($state, '');
         }
         return array();
     }
@@ -69,19 +84,19 @@ class syntax_plugin_ckgedit_font extends DokuWiki_Syntax_Plugin {
                 list($style, $face) = $match;
                 if(isset($face)) {
                     list($face,$fg,$bg) = explode(';;',$face);
-                    if(isset($fg)) {
-                         $color = " color: $fg; ";  
-                         $style .= $color;
-                            
+                    if (isset($fg) && $fg !== 'inherit') {
+                        $color = " color: $fg;";  
+                        $style .= $color;
                     }
-                    if(isset($bg)) {
-                         $color = " background-color: $bg ";  
-                         $style .= $color;
-                            
+                    if (isset($bg) && $bg !== 'inherit') {
+                        $color = " background-color: $bg;";  
+                        $style .= $color;
                     }
-
+                    if (isset($face) && $face !== 'inherit') {
+                        $style = "font-family: $face; $style";
+                    }
                 }
-                $style = "font-family: $face; $style";
+                $style = trim($style);
                 $renderer->doc .= "<span style='$style'>"; 
                 break;
  

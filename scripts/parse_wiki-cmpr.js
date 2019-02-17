@@ -293,8 +293,7 @@ function parse_wikitext (id) {
   var HTMLAcroInList = false
   var HTML_InterWiki = false
   var HTMLParserFont = false
-  HTMLLinkInList = false
-  var HTMLParserFontInfix = false
+  var HTMLLinkInList = false
   var CurrentTable
 
   var HTMLParserTopNotes = new Array()
@@ -554,9 +553,6 @@ function parse_wikitext (id) {
         (this.fontObj.fontColor || 'inherit') + ';;' +
         (this.fontObj.fontBgcolor || 'inherit') + '>'
       let inherits = fontOpen.match(/inherit/g)
-      if (inherits && inherits.length < 3) {
-        HTMLParserFontInfix = true
-      }
       HTMLParserFont = true
       return fontOpen + activeResults + '</font>'
     }
@@ -586,25 +582,24 @@ function parse_wikitext (id) {
 
     setFontAttr (fontAttrValue) {
       this.fontObj = {}
-      let matches = fontAttrValue.match(/font-family:\s*([\w\-\s,]+);?/)
+      let matches = fontAttrValue.match(/font-family:\s*([^;]+);?/)
       if (matches) {
         this.fontObj.fontFamily = matches[1]
       }
 
       // matches = fontAttrValue.match(/font-size:\s*(\d+(\w+|%));?/);
-      matches = fontAttrValue.match(/font-size:\s*(.*)/)
+      matches = fontAttrValue.match(/font-size:\s*([^;]+);?/)
       if (matches) {
         matches[1] = matches[1].replace(/;/, '')
         this.fontObj.fontSize = matches[1]
       }
-      matches = fontAttrValue.match(/font-weight:\s*(\w+);?/)
+      matches = fontAttrValue.match(/font-weight:\s*([^;]+);?/)
       if (matches) {
         this.fontObj.fontWeight = matches[1]
       }
-      matches = fontAttrValue.match(/.*?color:\s*(.*)/)
+      matches = fontAttrValue.match(/.*?color:\s*([^;]+);?/)
       let bgcolorFound = false
       if (matches) {
-        matches[1] = matches[1].replace(/;/, '')
         if (matches[0].match(/background/)) {
           this.fontObj.fontBgcolor = matches[1]
         } else {
@@ -612,7 +607,7 @@ function parse_wikitext (id) {
         }
       }
       if (!bgcolorFound) {  // catch MS Word which uses background:color-name instead of background-color:color-name
-        matches = fontAttrValue.match(/background:\s*(\w+)/)
+        matches = fontAttrValue.match(/background:\s*([^;]+);?/)
         if (matches && matches[0].match(/background/)) {
           this.fontObj.fontBgcolor = matches[1]
         }
@@ -1421,6 +1416,8 @@ function parse_wikitext (id) {
         let currSpan = this.spanStack.pop()
         activeResults = currSpan.close(activeResults)
         tag = 'blank'
+        this.using_fonts = this.spanStack.length > 0 &&
+          this.spanStack.some(spanElem => !!spanElem.fontObj)
       }
       if (tag == 'dl' && this.downloadable_code) {
         this.downloadable_code = false
@@ -1587,7 +1584,7 @@ function parse_wikitext (id) {
         return (match.replace(/(&gt;)/g, '\__QUOTE__'))
       })
       // adjust spacing on multi-formatted strings
-      activeResults = activeResults.replace(/([\/\*_])_FORMAT_SPACE_([\/\*_]{2})_FORMAT_SPACE_$/, '$1$2@@_SP_@@')
+      activeResults = activeResults.replace(/([\/\*_]{2})_FORMAT_SPACE_([\/\*_]{2})_FORMAT_SPACE_$/, '$1$2@@_SP_@@')
       if (text.match(/^&\w+;/)) {
         activeResults = activeResults.replace(/_FORMAT_SPACE_\s*$/, '')   // remove unwanted space after character entity
       }
@@ -1602,7 +1599,7 @@ function parse_wikitext (id) {
       if (!this.code_type) {
         text = text.replace(/\x20{6,}/, '   ')
         if (this.in_td) {
-          text = text.replace(/(&nbsp;)+\s/, '\\__')
+          text = text.replace(/(&nbsp;)+\s*/, '__CKG_NBSP__')
         } else {
           text = text.replace(/(&nbsp;)+/, ' ')
         }
@@ -1834,8 +1831,6 @@ function parse_wikitext (id) {
     // spacing around entities with double format characters
     activeResults = activeResults.replace(/([\*\/_]{2})@@_SP_@@(&\w+;)/g, '$1 $2')
 
-    activeResults = activeResults.replace(/\n@@_SP_@@\n/g, '')
-    activeResults = activeResults.replace(/@@_SP_@@\n/g, '')
     activeResults = activeResults.replace(/@@_SP_@@/g, ' ')
     var regex = new RegExp(HTMLParser_FORMAT_SPACE + '([^\\)\\]\\}\\{\\-\\.,;:\\!\?"\x94\x92\u201D\u2019' + "'" + '])', 'g')
     activeResults = activeResults.replace(regex, ' $1')
@@ -1882,9 +1877,6 @@ function parse_wikitext (id) {
 
   if (HTMLParserFont)   // HTMLParserFont start
   {
-    if (HTMLParserFontInfix) {
-      activeResults = activeResults.replace(/<\/font>\s{1}/gm, '</font>')
-    }
     fontLinkReconcile()
 
     var regex = /\>\s+(\*\*|__|\/\/|'')\s+_\s+\1\s+<\/font>/gm
@@ -1963,6 +1955,7 @@ function parse_wikitext (id) {
   if (!useComplexTables) { activeResults = activeResults.replace(/~~COMPLEX_TABLES~~/gm, '') }
   activeResults = activeResults.replace(/_CKG_ASTERISK_/gm, '*')
   activeResults = activeResults.replace(/_ESC_BKSLASH_/g, '\\')
+  activeResults = activeResults.replace(/__CKG_NBSP__/g, '\\__')
   activeResults = activeResults.replace(/divalNLine/gm, '\n')
   if (id == 'test') {
     if (HTMLParser_test_result(activeResults)) {
