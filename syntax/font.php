@@ -27,6 +27,7 @@ class syntax_plugin_ckgedit_font extends DokuWiki_Syntax_Plugin {
     function getSort(){ return 158; }
     function connectTo($mode) {
         $this->Lexer->addEntryPattern('<font\s*(?:(?!>).)*?>',$mode,'plugin_ckgedit_font');
+        $this->Lexer->addSpecialPattern('~~CKG_TABLE_NBSP~~', $mode, 'plugin_ckgedit_font');
     }
     function postConnect() {
         $this->Lexer->addEntryPattern('<font\s*(?:(?!>).)*?>','plugin_ckgedit_font','plugin_ckgedit_font');
@@ -66,8 +67,15 @@ class syntax_plugin_ckgedit_font extends DokuWiki_Syntax_Plugin {
                 }
                 return array($state, array($size, $face));
  
-            case DOKU_LEXER_UNMATCHED :  return array($state, $match);
-            case DOKU_LEXER_EXIT :       return array($state, '');
+            case DOKU_LEXER_UNMATCHED :
+                return array($state, $match);
+            case DOKU_LEXER_EXIT :
+                return array($state, '');
+            case DOKU_LEXER_SPECIAL:
+                if (preg_match('/~~CKG_TABLE_NBSP~~/', $match)) {
+                    return array($state, "&nbsp;");
+                }
+                break;
         }
         return array();
     }
@@ -77,31 +85,38 @@ class syntax_plugin_ckgedit_font extends DokuWiki_Syntax_Plugin {
      */
     function render($mode, Doku_Renderer $renderer, $data) {
         if($mode == 'xhtml'){
-            list($state, $match) = $data;
+            list($state, $param) = $data;
 
             switch ($state) {
-              case DOKU_LEXER_ENTER :      
-                list($style, $face) = $match;
-                if(isset($face)) {
-                    list($face,$fg,$bg) = explode(';;',$face);
-                    if (isset($fg) && $fg !== 'inherit') {
-                        $color = " color: $fg;";  
-                        $style .= $color;
+                case DOKU_LEXER_ENTER :      
+                    list($style, $face) = $param;
+                    if(isset($face)) {
+                        list($face,$fg,$bg) = explode(';;',$face);
+                        if (isset($fg) && $fg !== 'inherit') {
+                            $color = " color: $fg;";  
+                            $style .= $color;
+                        }
+                        if (isset($bg) && $bg !== 'inherit') {
+                            $color = " background-color: $bg;";  
+                            $style .= $color;
+                        }
+                        if (isset($face) && $face !== 'inherit') {
+                            $style = "font-family: $face; $style";
+                        }
                     }
-                    if (isset($bg) && $bg !== 'inherit') {
-                        $color = " background-color: $bg;";  
-                        $style .= $color;
-                    }
-                    if (isset($face) && $face !== 'inherit') {
-                        $style = "font-family: $face; $style";
-                    }
-                }
-                $style = trim($style);
-                $renderer->doc .= "<span style='$style'>"; 
-                break;
+                    $style = trim($style);
+                    $renderer->doc .= "<span style='$style'>"; 
+                    break;
  
-              case DOKU_LEXER_UNMATCHED :  $renderer->doc .= $renderer->_xmlEntities($match); break;
-              case DOKU_LEXER_EXIT :       $renderer->doc .= "</span>"; break;
+                case DOKU_LEXER_UNMATCHED :
+                    $renderer->doc .= $renderer->_xmlEntities($param);
+                    break;
+                case DOKU_LEXER_EXIT :
+                    $renderer->doc .= "</span>";
+                    break;
+                case DOKU_LEXER_SPECIAL:
+                    $renderer->doc .= $param;
+                    break;
             }
             return true;
         }

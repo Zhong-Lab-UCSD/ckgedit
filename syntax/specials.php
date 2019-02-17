@@ -85,25 +85,24 @@ class syntax_plugin_ckgedit_specials extends DokuWiki_Syntax_Plugin
     {
         $class = "";
         $xhtml = "";
-        error_log("<specials> handler: $match, $state, $pos");
         switch ($state) {
             case DOKU_LEXER_SPECIAL:
                 if (preg_match('/OPEN/', $match)) {
-                    return array($state, "<span class='multi_p_open'></span>" );
+                    return array($state, "<span class='multi_p_open'></span>", TRUE);
                 } elseif (preg_match('/CLOSE/', $match)) {
-                    return array($state, "<span class='multi_p_close'></span>" );
+                    return array($state, "<span class='multi_p_close'></span>", TRUE);
                 } elseif (preg_match('/(TABLES|STYLING|AUTO_INTERNAL)/', $match)) {
-                    return array($state, "" );
+                    return array($state, "", FALSE);
                 } elseif (preg_match('/~~TABLE_CELL_WRAP_(START|STOP)~~/', $match)) {
-                    return array($state, "" );
+                    return array($state, "", FALSE);
                 }
                 // no break
-            case DOKU_LEXER_ENTER:  return array($state, '');
+            case DOKU_LEXER_ENTER:  return array($state, '', FALSE);
             case DOKU_LEXER_UNMATCHED:
                 $match = str_replace('<div class="table">', "", $match);
                 $match = preg_replace('/<\/?code>/ms', "", $match);
-                return array($state, $match);
-            case DOKU_LEXER_EXIT:       return array($state, '');
+                return array($state, $match, TRUE);
+            case DOKU_LEXER_EXIT:       return array($state, '', TRUE);
         }
         return array($state, "" );
     }
@@ -113,19 +112,18 @@ class syntax_plugin_ckgedit_specials extends DokuWiki_Syntax_Plugin
      */
     public function render($mode, Doku_Renderer $renderer, $data)
     {
-        error_log("<specials> render: $mode");
         if ($mode == 'xhtml') {
-            list($state, $xhtml) = $data;
-            error_log("<specials> render state: $state, $xhtml");
+            list($state, $xhtml, $newLine) = $data;
             switch ($state) {
                 case DOKU_LEXER_SPECIAL:
-                    $renderer->doc .=  DOKU_LF . $xhtml . DOKU_LF;
+                    $renderer->doc .=  ($newLine ? DOKU_LF : '') . $xhtml .
+                        ($newLine ? DOKU_LF : '');
                     return true;
                 case DOKU_LEXER_ENTER:  $renderer->doc .= ""; break;
                 case DOKU_LEXER_UNMATCHED:
                     $renderer->doc .= $xhtml; break;
                 case DOKU_LEXER_EXIT:       $renderer->doc .= ""; break;
-        }
+            }
             return true;
         }
         return false;

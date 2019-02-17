@@ -615,6 +615,102 @@ function parse_wikitext (id) {
     }
   }
 
+  var LinkObj = class LinkObj {
+    constructor (prevText) {
+      this.prevText = prevText
+      this.attr = {}
+      this.fontObj = null
+    }
+
+    /**
+     * close the span and return the resulting Dokuwiki code up to the span
+     * @param {string} activeResults - the remaining `activeResults` that is
+     *    not processed.
+     */
+    close (activeResults) {
+      let parsedText
+      if (this.fontObj) {
+        parsedText = this.parseFontText(activeResults)
+      } else {
+        parsedText = this.parseText(activeResults)
+      }
+      return this.prevText + (this.noBrTagOpen ? '' : '\n') + parsedText +
+        (this.noSpaceTagEnd ? '' : ' ')
+    }
+
+    parseText (activeResults) {
+      return activeResults
+    }
+
+    parseFontText (activeResults) {
+      let fontOpen = '<font ' +
+        (this.fontObj.fontSize || 'inherit') + '/' +
+        (this.fontObj.fontFamily || 'inherit') + ';;' +
+        (this.fontObj.fontColor || 'inherit') + ';;' +
+        (this.fontObj.fontBgcolor || 'inherit') + '>'
+      let inherits = fontOpen.match(/inherit/g)
+      HTMLParserFont = true
+      return fontOpen + activeResults + '</font>'
+    }
+
+    setAttr (attr, parser) {
+      if (attr.name === 'class' && attr.value === 'np_break') {
+        this.noBrTagOpen = true
+      } else if (attr.name === 'class') {
+        if (attr.value === 'curid') {
+          this.curid = true
+        } else if (attr.value === 'multi_p_open') {
+          parser.in_multi_plugin = true
+          HTMLParser_MULTI_LINE_PLUGIN = true
+        } else if (attr.value === 'multi_p_close') {
+          parser.in_multi_plugin = false
+        } else if (attr.value.match(geshi_classes)) {
+          this.noBrTagOpen = true
+          this.geshi = true
+        }
+      } else if (!ckgedit_xcl_styles && attr.name === 'style') {
+        this.noBrTagOpen = true
+        this.noSpaceTagEnd = true
+        parser.using_fonts = true
+        this.setFontAttr(attr.value)
+      }
+    }
+
+    setFontAttr (fontAttrValue) {
+      this.fontObj = {}
+      let matches = fontAttrValue.match(/font-family:\s*([^;]+);?/)
+      if (matches) {
+        this.fontObj.fontFamily = matches[1]
+      }
+
+      // matches = fontAttrValue.match(/font-size:\s*(\d+(\w+|%));?/);
+      matches = fontAttrValue.match(/font-size:\s*([^;]+);?/)
+      if (matches) {
+        matches[1] = matches[1].replace(/;/, '')
+        this.fontObj.fontSize = matches[1]
+      }
+      matches = fontAttrValue.match(/font-weight:\s*([^;]+);?/)
+      if (matches) {
+        this.fontObj.fontWeight = matches[1]
+      }
+      matches = fontAttrValue.match(/.*?color:\s*([^;]+);?/)
+      let bgcolorFound = false
+      if (matches) {
+        if (matches[0].match(/background/)) {
+          this.fontObj.fontBgcolor = matches[1]
+        } else {
+          this.fontObj.fontColor = matches[1]
+        }
+      }
+      if (!bgcolorFound) {  // catch MS Word which uses background:color-name instead of background-color:color-name
+        matches = fontAttrValue.match(/background:\s*([^;]+);?/)
+        if (matches && matches[0].match(/background/)) {
+          this.fontObj.fontBgcolor = matches[1]
+        }
+      }
+    }
+  }
+
   HTMLParser(CKEDITOR.instances.wiki__text.getData(), {
     attribute: '',
     link_title: '',
@@ -1598,8 +1694,8 @@ function parse_wikitext (id) {
       }
       if (!this.code_type) {
         text = text.replace(/\x20{6,}/, '   ')
-        if (this.in_td) {
-          text = text.replace(/(&nbsp;)+\s*/, '__CKG_NBSP__')
+        if (this.in_td && !this.in_link) {
+          text = text.replace(/(&nbsp;)+\s*/, '~~CKG_TABLE_NBSP~~')
         } else {
           text = text.replace(/(&nbsp;)+/, ' ')
         }
@@ -1955,7 +2051,6 @@ function parse_wikitext (id) {
   if (!useComplexTables) { activeResults = activeResults.replace(/~~COMPLEX_TABLES~~/gm, '') }
   activeResults = activeResults.replace(/_CKG_ASTERISK_/gm, '*')
   activeResults = activeResults.replace(/_ESC_BKSLASH_/g, '\\')
-  activeResults = activeResults.replace(/__CKG_NBSP__/g, '\\__')
   activeResults = activeResults.replace(/divalNLine/gm, '\n')
   if (id == 'test') {
     if (HTMLParser_test_result(activeResults)) {
