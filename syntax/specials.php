@@ -38,7 +38,7 @@ class syntax_plugin_ckgedit_specials extends DokuWiki_Syntax_Plugin
      */
     public function getType()
     {
-        return 'substition';
+        return 'protected';
     }
    
     /**
@@ -71,11 +71,13 @@ class syntax_plugin_ckgedit_specials extends DokuWiki_Syntax_Plugin
         $this->Lexer->addSpecialPattern('~~TABLE_CELL_WRAP_(?:START|STOP)~~', $mode, 'plugin_ckgedit_specials');
         $this->Lexer->addSpecialPattern('~~NO_STYLING~~', $mode, 'plugin_ckgedit_specials');
         $this->Lexer->addEntryPattern('~~START_HTML_BLOCK~~(?=.*?~~CLOSE_HTML_BLOCK~~)', $mode, 'plugin_ckgedit_specials');
+        $this->Lexer->addEntryPattern('~~START_HTML_BLOCK__CKG_EDIT_~~(?=.*?~~CLOSE_HTML_BLOCK__CKG_EDIT_~~)', $mode, 'plugin_ckgedit_specials');
         $this->Lexer->addSpecialPattern('~~AUTO_INTERNAL_LINKS~~', $mode, 'plugin_ckgedit_specials');
     }
     public function postConnect()
     {
         $this->Lexer->addExitPattern('~~CLOSE_HTML_BLOCK~~', 'plugin_ckgedit_specials');
+        $this->Lexer->addExitPattern('~~CLOSE_HTML_BLOCK__CKG_EDIT_~~', 'plugin_ckgedit_specials');
     }
 
     /**

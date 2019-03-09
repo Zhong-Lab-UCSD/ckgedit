@@ -294,7 +294,8 @@ function parse_wikitext (id) {
   var HTML_InterWiki = false
   var HTMLParserFont = false
   var HTMLLinkInList = false
-  var CurrentTable
+  var HTMLLinkInCodeRemoved = false
+  var HTMLFontInLinkMerged = false
 
   var HTMLParserTopNotes = new Array()
   var HTMLParserBottomNotes = new Array()
@@ -311,16 +312,16 @@ function parse_wikitext (id) {
   /**
    * @class
    * TableObj - an object for a table instance
-   * @property {number} currRowIndex - the row index of the current cursor
-   * @property {number} currColIndex - the column index of the current cursor
-   * @property {boolean} rowSpan - whether the current cursor is in a rowspan
-   * @property {number} start - the start offset of the table text in the
-   *    current context (body or nested tag)
+   * @property {string} prevText - previous Dokuwiki text, to be included when
+   *    the Dokuwiki code for this table is generated.
+   *    This is used to cache the converted Dokuwiki code so far to create
+   *    an enclosed environment for the table content only. (`activeResults`
+   *    will only include the contents within the table now.)
    * @property {Array<Array<TableCellObj|number>>} rows - the two-dimensional
    *    array of cell objects
    *    For the cell object, it will be either `TABLE_ROW_SPAN` ( = 1 ) for
-   *    rowspan placeholders, `TABLE_COL_SPAN` ( = 2 ) for colspan placeholders,
-   *    or a `TableCellObj` object.
+   *    rowspan placeholders, `TABLE_COL_SPAN` ( = 2 ) for colspan
+   *    placeholders, or a `TableCellObj` object.
    * @property {Array<number>} pendingRowSpans - an sparse array of pending
    *    number of rowspan cells from previous rows, for examples, if a
    *    cell from last row at column index 3 has rowspan = 5, then
@@ -332,8 +333,8 @@ function parse_wikitext (id) {
    *    `td`.
    *
    * @constructor
-   * @param {string} prevText - previous Dokuwiki text, to be included when the
-   *    Dokuwiki code is generated.
+   * @param {string} prevText - previous Dokuwiki text, to be included when
+   *    the Dokuwiki code for this table is generated.
    */
   var TableObj = class TableObj {
     constructor (prevText) {
@@ -347,7 +348,7 @@ function parse_wikitext (id) {
      * close the table and return the resulting Dokuwiki code up to the table
      * @param {string} activeResults - the remaining `activeResults` that is
      *    not processed (should not happen as there should be no valid text
-     *    between the last </tr> and the </table>)
+     *    between the last `</tr>` and the `</table>`)
      */
     close (activeResults) {
       let tableResult = ''
@@ -382,7 +383,6 @@ function parse_wikitext (id) {
 
     /**
      * Insert row span element at the current location if needed
-     *
      */
     insertRowSpans () {
       let currentRow = this.rows[this.rows.length - 1]
@@ -486,8 +486,8 @@ function parse_wikitext (id) {
           result += '  '
         }
         if (this.text.match(/[\n|^]/)) {
-          result += this.constructor.complexTableBegin +
-            this.text + this.constructor.complexTableEnd
+          result += this.constructor.complexCellBegin +
+            this.text + this.constructor.complexCellEnd
         } else {
           result += this.text
         }
@@ -514,9 +514,37 @@ function parse_wikitext (id) {
     }
   }
 
-  TableCellObj.complexTableBegin = '~~TABLE_CELL_WRAP_START~~<WRAP>\n'
-  TableCellObj.complexTableEnd = '\n</WRAP>~~TABLE_CELL_WRAP_STOP~~'
+  TableCellObj.complexCellBegin = '~~TABLE_CELL_WRAP_START~~<WRAP>\n'
+  TableCellObj.complexCellEnd = '\n</WRAP>~~TABLE_CELL_WRAP_STOP~~'
 
+  /**
+   * @class
+   * SpanObj - an object for `<span>` elements
+   * This is mainly designed to process nested font tags created by CKEditor
+   * 
+   * @property {string} prevText - previous Dokuwiki text, to be included when
+   *    the Dokuwiki code for this span is generated.
+   *    This is used to cache the converted Dokuwiki code so far to create
+   *    an enclosed environment for the span content only. (`activeResults`
+   *    will only include the contents within the span now.)
+   * @property {object} attr - numerous attributes of the span
+   * @property {object} [fontObj] - the font settings this span represents,
+   *    including the following attributes.
+   * @property {string} [fontObj.fontSize] - CSS `font-size` property
+   * @property {string} [fontObj.fontWeight] - CSS `font-weight` property
+   * @property {string} [fontObj.fontFamily] - CSS `font-family` property
+   * @property {string} [fontObj.fontColor] - CSS `color` property
+   * @property {string} [fontObj.fontBgcolor] - CSS `background-color` property
+   *
+   * @property {boolean} noBrTagOpen - `true` if no newline should be inserted
+   *    before the final Dokuwiki code.
+   * @property {boolean} noSpaceTagEnd - `true` if no space should be inserted
+   *    after the final Dokuwiki code.
+   *
+   * @constructor
+   * @param {string} prevText - previous Dokuwiki text, to be included when the
+   *    Dokuwiki code is generated.
+   */
   var SpanObj = class SpanObj {
     constructor (prevText) {
       this.prevText = prevText
@@ -542,10 +570,20 @@ function parse_wikitext (id) {
         (this.noSpaceTagEnd ? '' : ' ')
     }
 
+    /**
+     * parse the text of normal `<span>` without fonts.
+     * @param {string} activeResults - the remaining `activeResults` that is
+     *    not processed.
+     */
     parseText (activeResults) {
       return activeResults
     }
 
+    /**
+     * Build the `<font></font>` tag representing the span
+     * @param {string} activeResults - the remaining `activeResults` that is
+     *    not processed.
+     */
     parseFontText (activeResults) {
       let fontOpen = '<font ' +
         (this.fontObj.fontSize || 'inherit') + '/' +
@@ -557,6 +595,14 @@ function parse_wikitext (id) {
       return fontOpen + activeResults + '</font>'
     }
 
+    /**
+     * Set attributes of the span
+     * @param {object} attr - the attribute object.
+     * @param {object} attr.name - the name of the attribute.
+     * @param {object} attr.value - the value of the attribute.
+     * @param {object} parser - the `HTMLParser` object, to set some global
+     *    flags
+     */
     setAttr (attr, parser) {
       if (attr.name === 'class' && attr.value === 'np_break') {
         this.noBrTagOpen = true
@@ -580,6 +626,10 @@ function parse_wikitext (id) {
       }
     }
 
+    /**
+     * Set the font attribute value from the `styles` attribute
+     * @param {object} fontAttrValue - the value of the `styles` attribute
+     */
     setFontAttr (fontAttrValue) {
       this.fontObj = {}
       let matches = fontAttrValue.match(/font-family:\s*([^;]+);?/)
@@ -606,7 +656,9 @@ function parse_wikitext (id) {
           this.fontObj.fontColor = matches[1]
         }
       }
-      if (!bgcolorFound) {  // catch MS Word which uses background:color-name instead of background-color:color-name
+      if (!bgcolorFound) {
+        // catch MS Word which uses background:color-name instead of
+        //    background-color:color-name
         matches = fontAttrValue.match(/background:\s*([^;]+);?/)
         if (matches && matches[0].match(/background/)) {
           this.fontObj.fontBgcolor = matches[1]
@@ -615,99 +667,488 @@ function parse_wikitext (id) {
     }
   }
 
+  /**
+   * @class
+   * LinkObj - an object for various link elements
+   * 
+   * @property {string} prevText - previous Dokuwiki text, to be included when
+   *    the Dokuwiki code for this span is generated.
+   *    This is used to cache the converted Dokuwiki code so far to create
+   *    an enclosed environment for the span content only. (`activeResults`
+   *    will only include the contents within the span now.)
+   * @property {object} attr - numerous attributes of the span
+   * @property {object} [fontObj] - the font settings this span represents,
+   *    including the following attributes.
+   * @property {string} [fontObj.fontSize] - CSS `font-size` property
+   * @property {string} [fontObj.fontWeight] - CSS `font-weight` property
+   * @property {string} [fontObj.fontFamily] - CSS `font-family` property
+   * @property {string} [fontObj.fontColor] - CSS `color` property
+   * @property {string} [fontObj.fontBgcolor] - CSS `background-color` property
+   *
+   * @property {boolean} noBrTagOpen - `true` if no newline should be inserted
+   *    before the final Dokuwiki code.
+   * @property {boolean} noSpaceTagEnd - `true` if no space should be inserted
+   *    after the final Dokuwiki code.
+   *
+   * @constructor
+   * @param {string} prevText - previous Dokuwiki text, to be included when
+   *    the Dokuwiki code is generated.
+   * @param {object} parser - the `HTMLParser` object, to set some global
+   *    flags
+   * @param {LinkObj} oldLink - the old link object to copy attributes from
+   */
   var LinkObj = class LinkObj {
-    constructor (prevText) {
-      this.prevText = prevText
-      this.attr = {}
+    constructor (prevText, parser, oldLink) {
       this.fontObj = null
+      this.linkClass = null
+      this.linkTitle = null
+      this.mediaClass = null
+      this.id = null
+      this.type = null
+      this.externalMime = false
+      this.pendingAttrs = []
+      this.linkPart = ''
+      this.interwikiClass = null
+      this.interwikiTitle = null
+      this.localImage = true
+      this.footnote = false
+      this.bottomNote = false
+
+      this.linkOnly = false
+
+      parser.export_code = false
+      parser.code_snippet = false
+      parser.downloadable_file = ''
+      parser.xcl_markup = false
+
+      if (oldLink) {
+        for (let key in oldLink) {
+          if (oldLink.hasOwnProperty(key)) {
+            this[key] = oldLink[key]
+          }
+        }
+      }
+
+      this.prevText = prevText
+
+      this.interwiki = false
+      this.bottom_url = false
+    }
+
+    isRegularLink () {
+      // return true if anything similar to `[[<whatever>|<whatever>]]` needs
+      // to be returned for this link object
+      return !this.imgLinkType && !!this.linkClass.match(/someRegex/)
     }
 
     /**
      * close the span and return the resulting Dokuwiki code up to the span
      * @param {string} activeResults - the remaining `activeResults` that is
      *    not processed.
+     * @param {object} parser - the `HTMLParser` object, to set some global
+     *    flags
+     * @returns {string} parsed Dokuwiki code
      */
-    close (activeResults) {
-      let parsedText
-      if (this.fontObj) {
-        parsedText = this.parseFontText(activeResults)
+    close (activeResults, parser) {
+      // Note: if an image is here with additional texts to the end,
+      // the link will need to be broken into two consecutive parts
+      let parsedText = this.prevText
+
+      // first determine whether this link should use image tags
+      if (this.linkOnly ||
+        (this.externalMime &&
+          (parser.in_endnotes || this.mediaClass === 'mediafile')
+        )
+      ) {
+        // use img tags instead of link tags
+        parsedText += '{{' + this.linkPart + '?linkOnly' +
+          this.getLabelPartIfNeeded(activeResults) + '}}'
       } else {
-        parsedText = this.parseText(activeResults)
-      }
-      return this.prevText + (this.noBrTagOpen ? '' : '\n') + parsedText +
-        (this.noSpaceTagEnd ? '' : ' ')
-    }
-
-    parseText (activeResults) {
-      return activeResults
-    }
-
-    parseFontText (activeResults) {
-      let fontOpen = '<font ' +
-        (this.fontObj.fontSize || 'inherit') + '/' +
-        (this.fontObj.fontFamily || 'inherit') + ';;' +
-        (this.fontObj.fontColor || 'inherit') + ';;' +
-        (this.fontObj.fontBgcolor || 'inherit') + '>'
-      let inherits = fontOpen.match(/inherit/g)
-      HTMLParserFont = true
-      return fontOpen + activeResults + '</font>'
-    }
-
-    setAttr (attr, parser) {
-      if (attr.name === 'class' && attr.value === 'np_break') {
-        this.noBrTagOpen = true
-      } else if (attr.name === 'class') {
-        if (attr.value === 'curid') {
-          this.curid = true
-        } else if (attr.value === 'multi_p_open') {
-          parser.in_multi_plugin = true
-          HTMLParser_MULTI_LINE_PLUGIN = true
-        } else if (attr.value === 'multi_p_close') {
-          parser.in_multi_plugin = false
-        } else if (attr.value.match(geshi_classes)) {
-          this.noBrTagOpen = true
-          this.geshi = true
+        this.linkPart = this.linkPart.replace(/%7c/, '%257c')
+        let match
+        while (match = activeResults.match(/^\s*((?:(?!{{).)*?)\s*({{(?:(?!}}).)*?}})\s*(.*?)\s*$/m)) {
+          let linkFrag = new LinkObj(this.prevText, parser, this)
+          this.prevText = linkFrag.close(match[1])
+          linkFrag = new LinkObj(this.prevText, parser, this)
+          this.prevText = linkFrag.close(match[2])
+          activeResults = match[3]
         }
-      } else if (!ckgedit_xcl_styles && attr.name === 'style') {
-        this.noBrTagOpen = true
-        this.noSpaceTagEnd = true
-        parser.using_fonts = true
-        this.setFontAttr(attr.value)
+
+        let labelPart = this.getLabelPartIfNeeded(activeResults)
+
+        if (this.isRegularLink() && this.linkPart) {
+          parsedText += '[[' + this.linkPart + labelPart + ']]'
+        } else {
+          parsedText += activeResults
+        }
+      }
+
+      parser.in_link = false
+      return parsedText
+    }
+
+    getLabelPartIfNeeded (label) {
+      label = label || ''
+      if (this.interwikiClass) {
+        this.linkPart = this.linkPart.replace(
+          /^.*?oIWIKIo(.*?)cIWIKIc.*$/, '$1'
+        )
+        if (!this.linkPart) {
+          this.linkPart = label.replace(/^.*?oIWIKIo(.*?)cIWIKIc.*$/, '$1')
+          label = ''
+        } else if (this.linkPart === label ||
+          this.linkPart === label.replace(/\s/, '%20')
+        ) {
+          label = ''
+        } else {
+          label = '|' + label
+        }
+      }
+      return label ? '|' + label : ''
+    }
+
+    /**
+     * Set attributes of the span
+     * @param {object} attr - the attribute object.
+     * @param {object} attr.name - the name of the attribute.
+     * @param {object} attr.value - the value of the attribute.
+     * @param {object} parser - the `HTMLParser` object, to set some global
+     *    flags
+     */
+    addAttr (attr, parser) {
+      if (attr.name === 'class') {
+        this.setClass(attr, parser)
+      } else if (attr.name === 'id') {
+        this.id = attr.value
+      } else if (attr.name === 'type' || attr.value.match(/other_mime/)) {
+        this.type = attr.value
+      } else {
+        this.pendingAttrs.push(attr)
       }
     }
 
-    setFontAttr (fontAttrValue) {
-      this.fontObj = {}
+    processAttrs (parser) {
+      this.pendingAttrs.forEach(attr => {
+        if (attr.name === 'title') {
+          this.linkTitle = attr.escaped
+          if (this.interwikiClass) {
+            this.interwikiTitle = attr.escaped
+          } else {
+            this.linkTitle = this.linkTitle.replace(/\s+.*$/, '')
+          }
+        } else if (attr.name === 'href' && !parser.code_type) {
+          this.processHref(attr, parser)
+        }
+      })
+      this.pendingAttrs = []
+      if (this.interwikiClass && this.interwikiTitle) {
+        this.convertIWiki()
+      }
+    }
+
+    processHref (hrefAttr, parser) {
+      let qsSet = false
+      let http = !!hrefAttr.escaped.match(/https*:\/\//)
+      let savedUrl
+      if (http) {
+        savedUrl = hrefAttr.escaped
+      }
+      if (hrefAttr.escaped.match(/\/lib\/exe\/detail.php/)) {
+        this.imgLinkType = 'detail'
+      } else if (hrefAttr.escaped.match(/exe\/fetch.php/)) {
+        this.imgLinkType = 'direct'
+      }
+
+      if (this.linkClass && this.linkClass.match(/media/) && !this.linkTitle) {
+        let linkMatch = hrefAttr.escaped.match(/media=(.*)/)
+        if (linkMatch) {
+          this.linkTitle = linkMatch[1]
+        }
+      }
+      // required to distinguish external images from external mime types
+      // that are on the wiki which also use {{url}}
+      let mediaType = hrefAttr.escaped.match(/fetch\.php.*?media=.*?\.(png|gif|jpg|jpeg)$/i)
+      if (mediaType) {
+        mediaType = mediaType[1]
+      }
+
+      this.localImage = false
+
+      if (http) {
+        this.linkPart = hrefAttr.escaped
+      }
+
+      let matches
+      
+      if (hrefAttr.escaped.match(/^(ftp|nntp):/)) {
+        this.linkPart = hrefAttr.escaped
+      } else if (hrefAttr.escaped.match(/do=export_code/)) {
+        parser.export_code = true
+        this.localImage = true
+      } else if (hrefAttr.escaped.match(/^mailto:/)) {
+        this.linkPart = hrefAttr.escaped.replace(/mailto:/, '')
+      } else if (hrefAttr.escaped.match(/m-files/)) {
+        this.linkPart = hrefAttr.escaped
+        this.mfile = hrefAttr.escaped
+      } else if (hrefAttr.escaped.match(/^file:/)) {  // samba share
+        let url = hrefAttr.value.replace(/file:[\/]+/, '')
+        url = url.replace(/[\/]/g, '\\')
+        url = '\\\\' + url
+        this.linkPart = url
+      } else if (
+        http && !mediaType &&
+        (matches = hrefAttr.escaped.match(/fetch\.php(.*)/))
+      ) {
+        // external mime types after they've been saved first time
+        if (matches[1].match(/media=/)) {
+          elems = matches[1].split(/=/)
+          this.linkPart = elems[1]
+        } else {   // nice urls
+          matches[1] = matches[1].replace(/^\//, '')
+          this.linkPart = matches[1]
+        }
+
+        if (typeof config_animal !== 'undefined') {
+          let regex = new RegExp(config_animal + '\/file\/(.*)')
+          matches = hrefAttr.escaped.match(regex)
+          if (matches && matches[1]) {
+            this.linkPart = matches[1]
+          }
+          if (this.linkPart) {
+            this.linkPart = this.linkPart.replace(/\//g, ':')
+          }
+        }
+
+        this.linkPart = decodeURIComponent
+          ? decodeURIComponent(this.linkPart) : unescape(this.linkPart)
+        if (!this.linkPart.match(/^:/)) {
+          this.linkPart = ':' + this.linkPart
+        }
+        this.externalMime = true
+      } else {
+        matches = hrefAttr.escaped.match(/doku.php\?id=(.*)/)
+        if (matches && savedUrl) {
+          let regex = DOKU_BASE + 'doku.php'
+          if (!hrefAttr.escaped.match(regex)) {
+            this.linkClass = 'urlextern'
+            this.linkPart = savedUrl
+            matches = null
+          }
+        }
+        if (!matches) {
+          matches = hrefAttr.escaped.match(/doku.php\/(.*)/)
+        }
+        /* previously saved internal link with query string
+          requires initial ? to be recognized by DW. In Anteater and later */
+        if (matches) {
+          if (!matches[1].match(/\?/) && matches[1].match(/&amp;/)) {
+            qsSet = true
+            matches[1] = matches[1].replace(/&amp;/, '?')
+          }
+        }
+        if (matches && matches[1]) {
+          if (!matches[1].match(/^:/)) {
+            this.linkPart = ':' + matches[1]
+          } else {
+            this.linkPart = matches[1]
+          }
+
+          if (this.linkPart.match(/\.\w+$/)) {  // external mime's first access
+            if (type && type === 'other_mime') {
+              this.externalMime = true
+            }
+          }
+        } else {
+          matches = hrefAttr.value.match(/\\\\/)   // Windows share
+          if (matches) {
+            this.linkPart = hrefAttr.escaped
+          }
+        }
+      }
+
+      if (this.linkClass === 'media') {
+        if (hrefAttr.value.match(/http:/)) {
+          this.localImage = false
+        }
+      }
+
+      if (!this.linkPart && this.linkTitle) {
+        if (matches = this.linkClass.match(/media(.*)/)) {
+          this.linkTitle = decodeURIComponent(safe_convert(this.linkTitle))
+          this.linkPart = this.linkTitle
+          if (!this.linkPart.match(/^:/) &&
+            !this.linkPart.match(/^https?\:/)
+          ) {
+            this.linkPart = ':' + this.linkPart.replace(/^\s+/, '')
+          }
+          this.externalMime = true
+          this.localImage = false
+        }
+      }
+  
+
+      if (this.linkPart.match && this.linkPart.match(/%[a-fA-F0-9]{2}/) &&
+        (matches = this.linkPart.match(/userfiles\/file\/(.*)/))
+      ) {
+        matches[1] = matches[1].replace(/\//g, ':')
+        if (!matches[1].match(/^:/)) {
+          matches[1] = ':' + matches[1]
+        }
+        this.linkPart = decodeURIComponent
+          ? decodeURIComponent(matches[1]) : unescape(matches[1])
+        this.linkPart = decodeURIComponent
+          ? decodeURIComponent(this.linkPart) : unescape(this.linkPart)
+        this.externalMime = true
+      } else if (this.linkPart && this.linkPart.match(/%[a-fA-F0-9]{2}/)) {
+        this.linkPart = decodeURIComponent(this.linkPart)
+        this.linkPart = decodeURIComponent(this.linkPart)
+      }
+
+      // alert('title: ' + this.linkTitle + '  class: ' + this.link_class + ' export: ' +this.export_code);
+      if (this.linkTitle && this.linkTitle.match(/Snippet/)) {
+        parser.code_snippet = true
+      }
+
+      /* anchors to current page without prefixing namespace:page */
+      if (hrefAttr.value.match(/^#/) && this.linkClass.match(/wikilink/)) {
+        this.linkPart = hrefAttr.value
+        this.linkTitle = false
+      }
+
+      /* These two conditions catch user_rewrite not caught above */
+      if (this.linkClass.match(/wikilink/) && this.linkTitle) {
+        this.externalMime = false
+        if (!this.linkPart) {
+          this.linkPart = this.linkTitle
+        }
+        if (!this.linkPart.match(/^:/)) {
+          this.linkPart = ':' + this.linkPart
+        }
+        if (this.linkPart.match(/\?.*?=/)) {
+          let elems = this.linkPart.split(/\?/)
+          elems[0] = elems[0].replace(/\//g, ':')
+          this.linkPart = elems[0] + '?' + elems[1]
+        } else {
+          this.linkPart = this.linkPart.replace(/\//g, ':')
+        }
+
+        /* catch query strings attached to internal links for .htacess nice urls  */
+        if (!qsSet && hrefAttr.name == 'href') {
+          if (!this.linkPart.match(/\?.*?=/) && !hrefAttr.value.match(/doku.php/)) {
+            let qs = hrefAttr.value.match(/(\?.*)$/)
+            if (qs && qs[1]) {
+              this.linkPart += qs[1]
+            }
+          }
+        }
+      } else if (this.linkClass.match(/mediafile/) && this.linkTitle && !this.linkPart) {
+        this.linkPart = this.linkTitle
+        this.externalMime = true
+
+        if (!this.linkPart.match(/^:/)) {
+          this.linkPart = ':' + this.linkPart
+        }
+      }
+
+      if (this.linkClass === 'urlextern' && !this.mfile && savedUrl) {
+        this.linkPart = savedUrl
+        this.externalMime = false  // prevents external links to images from being converted to image links
+      }
+      if (parser.in_endnotes) {
+        if (this.linkTitle) {
+          this.bottom_url = this.linkTitle  // save for bottom urls
+        } else if (this.linkPart) {
+          this.bottom_url = this.linkPart
+        }
+      }
+      this.linkTitle = null
+      this.linkClass = null
+    }
+
+    setClass (attr, parser) {
+      if (attr.value.match(/fn_top/)) {
+        this.footnote = true
+      } else if (attr.value.match(/fn_bot/)) {
+        this.bottomNote = true
+      } else if (attr.value.match(/mf_(png|gif|jpg|jpeg)/i)) {
+        this.linkOnly = true
+      } else if (attr.value.match(/interwiki/)) {
+        attr.value = attr.value.replace(/\./g, '_')
+        this.linkClass = attr.value
+        return
+      }
+
+      this.linkClass = attr.escaped
+      this.mediaClass = this.linkClass.match(/mediafile/)
+      if (this.linkClass.match(/interwiki/)) {
+        this.interwikiClass = this.linkClass
+      }
+    }
+
+    addFontFromDivAttr (fontAttrValue) {
+      let fontObj = {}
       let matches = fontAttrValue.match(/font-family:\s*([^;]+);?/)
       if (matches) {
-        this.fontObj.fontFamily = matches[1]
+        fontObj.fontFamily = matches[1]
       }
 
       // matches = fontAttrValue.match(/font-size:\s*(\d+(\w+|%));?/);
       matches = fontAttrValue.match(/font-size:\s*([^;]+);?/)
       if (matches) {
         matches[1] = matches[1].replace(/;/, '')
-        this.fontObj.fontSize = matches[1]
+        fontObj.fontSize = matches[1]
       }
       matches = fontAttrValue.match(/font-weight:\s*([^;]+);?/)
       if (matches) {
-        this.fontObj.fontWeight = matches[1]
+        fontObj.fontWeight = matches[1]
       }
       matches = fontAttrValue.match(/.*?color:\s*([^;]+);?/)
       let bgcolorFound = false
       if (matches) {
         if (matches[0].match(/background/)) {
-          this.fontObj.fontBgcolor = matches[1]
+          fontObj.fontBgcolor = matches[1]
         } else {
-          this.fontObj.fontColor = matches[1]
+          fontObj.fontColor = matches[1]
         }
       }
       if (!bgcolorFound) {  // catch MS Word which uses background:color-name instead of background-color:color-name
         matches = fontAttrValue.match(/background:\s*([^;]+);?/)
         if (matches && matches[0].match(/background/)) {
-          this.fontObj.fontBgcolor = matches[1]
+          fontObj.fontBgcolor = matches[1]
         }
       }
+      return this.addFont(fontObj, parser)
+    }
+
+    addFontFromTag (tag) {
+
+    }
+
+    addFont (fontObj) {
+      this.fontObj = this.fontObj || {}
+      for (let key in fontObj) {
+        if (
+          !this.fontObj.hasOwnProperty(key) &&
+          fontObj.hasOwnProperty(key)
+        ) {
+          this.fontObj[key] = fontObj[key]
+        }
+      }
+      HTMLFontInLinkMerged = true
+    }
+
+    convertIWiki () {
+      let iwType = this.interwikiClass.match(/iw_(\w+\.?\w{0,12})/)
+      let iwTitle = this.interwikiTitle.split(/\//)
+      let iwLabel = iwTitle[iwTitle.length - 1]
+      iwLabel = iwLabel.replace(String.frasl, '\/')
+      if (!iwLabel.match(/oIWIKIo.*?cIWIKIc/)) {
+        iwLabel = 'oIWIKIo' + iwLabel + 'cIWIKIc'
+      }
+      iwLabel = iwLabel.replace(/^.*?oIWIKIo/, 'oIWIKIo')
+      iwLabel = iwLabel.replace(/cIWIKIc.*/, 'cIWIKIc')
+      iwType[1] = iwType[1].replace(/_(\w{2})/g, '.' + '$1')
+      this.linkPart = iwType[1] + '>' + decodeURIComponent(iwLabel)
     }
   }
 
@@ -743,8 +1184,7 @@ function parse_wikitext (id) {
     prev_list_level: -1,
     list_started: false,
     xcl_markup: false,
-    in_link: false,
-    link_formats: new Array(),
+    linkObj: null,
     last_tag: '',
     code_type: false,
     in_endnotes: false,
@@ -754,7 +1194,7 @@ function parse_wikitext (id) {
     export_code: false,
     code_snippet: false,
     downloadable_file: '',
-    external_mime: false,
+    externalMime: false,
     in_header: false,
     curid: false,
     format_in_list: false,
@@ -764,12 +1204,6 @@ function parse_wikitext (id) {
     using_fonts: false,
     interwiki: false,
     bottom_url: false,
-    font_family: 'inherit',
-    font_size: 'inherit',
-    font_weight: 'inherit',
-    font_color: 'inherit',
-    font_bgcolor: 'inherit',
-    font_style: 'inherit',
     is_mediafile: false,
     end_nested: false,
     mfile: false,
@@ -785,21 +1219,6 @@ function parse_wikitext (id) {
         return true
       }
       return false
-    },
-    is_iwiki: function (class_name, title) {
-      var iw_type = class_name.match(/iw_(\w+\.?\w{0,12})/)
-      var iw_title = title.split(/\//)
-      var interwiki_label = iw_title[iw_title.length - 1]
-      interwiki_label = interwiki_label.replace(String.frasl, '\/')
-      if (!interwiki_label.match(/oIWIKIo.*?cIWIKIc/)) {
-        interwiki_label = 'oIWIKIo' + interwiki_label + 'cIWIKIc'
-      }
-      interwiki_label = interwiki_label.replace(/^.*?oIWIKIo/, 'oIWIKIo')
-      interwiki_label = interwiki_label.replace(/cIWIKIc.*/, 'cIWIKIc')
-      iw_type[1] = iw_type[1].replace(/_(\w{2})/g, '.' + '$1')
-      this.attr = iw_type[1] + '>' + decodeURIComponent(interwiki_label)
-      HTML_InterWiki = true
-      this.interwiki = true
     },
     start: function (tag, attrs, unary) {
       /**   if table debugging code:
@@ -849,36 +1268,16 @@ function parse_wikitext (id) {
           var alt = ''
           var from_clipboard = false
           this.is_smiley = false
-          this.in_link = false
-        }
-
-        if (tag == 'a') {
-          var local_image = true
-          var type = ''
-          this.xcl_markup = false  // set to false in end() as well, double sure
-          this.in_link = true
-          this.link_pos = activeResults.length
-          this.link_formats = new Array()
-          this.footnote = false
-          var bottom_note = false
-          this.id = ''
-          this.external_mime = false
-          var media_class = false
-          this.export_code = false
-          this.code_snippet = false
-          this.downloadable_file = ''
-          var qs_set = false
-          this.link_only = false
-          save_url = ''
-          this.interwiki = false
-          this.bottom_url = false
-          this.link_title = false
-          var interwiki_title = ''
-          var interwiki_class = ''
+          if (this.linkObj && this.linkObj.imgLinkType) {
+            this.image_link_type = this.linkObj.imgLinkType
+          }
         }
 
         if (tag == 'p') {
-          this.in_link = false
+          if (this.linkObj) {
+            activeResults = this.linkObj.close(activeResults, this)
+          }
+          this.linkObj = null
           if (!activeResults || activeResults.endsWith[markup_end[tag]]) {
             tag = 'blank'
           }
@@ -909,6 +1308,10 @@ function parse_wikitext (id) {
         if (tag === 'span') {
           this.spanStack.push(new SpanObj(activeResults))
           activeResults = ''
+        }
+
+        if (tag === 'a') {
+          this.linkObj = new LinkObj(activeResults, this)
         }
 
         for (var i = 0; i < attrs.length; i++) {
@@ -947,250 +1350,8 @@ function parse_wikitext (id) {
             this.spanStack[this.spanStack.length - 1].setAttr(attrs[i], this)
           }
 
-          if (tag == 'a') {
-            //             if(!confirm(attrs[i].name + '="' + attrs[i].escaped + '"')) exit;
-            if (attrs[i].name == 'title') {
-              this.link_title = attrs[i].escaped
-              if (interwiki_class) {
-                interwiki_title = attrs[i].escaped
-              } else this.link_title = this.link_title.replace(/\s+.*$/, '')
-            } else if (attrs[i].name == 'class') {
-              if (attrs[i].value.match(/fn_top/)) {
-                this.footnote = true
-              } else if (attrs[i].value.match(/fn_bot/)) {
-                bottom_note = true
-              } else if (attrs[i].value.match(/mf_(png|gif|jpg|jpeg)/i)) {
-                this.link_only = true
-              } else if (attrs[i].value.match(/interwiki/)) {
-                attrs[i].value = attrs[i].value.replace(/\./g, '_')
-                this.link_class = attrs[i].value
-                continue
-              }
-
-              this.link_class = attrs[i].escaped
-              media_class = this.link_class.match(/mediafile/)
-            } else if (attrs[i].name == 'id') {
-              this.id = attrs[i].value
-            } else if (attrs[i].name == 'type') {
-              type = attrs[i].value
-            } else if (attrs[i].name == 'href' && !this.code_type) {
-              var http = !!attrs[i].escaped.match(/https*:\/\//)
-              if (http) save_url = attrs[i].escaped
-              if (attrs[i].escaped.match(/\/lib\/exe\/detail.php/)) {
-                this.image_link_type = 'detail'
-              } else if (attrs[i].escaped.match(/exe\/fetch.php/)) {
-                this.image_link_type = 'direct'
-              }
-
-              if (this.link_class && this.link_class.match(/media/) && !this.link_title) {
-                var link_find = attrs[i].escaped.match(/media=(.*)/)
-                if (link_find) this.link_title = link_find[1]
-              }
-              // required to distinguish external images from external mime types
-              // that are on the wiki which also use {{url}}
-              var media_type = attrs[i].escaped.match(/fetch\.php.*?media=.*?\.(png|gif|jpg|jpeg)$/i)
-              if (media_type) media_type = media_type[1]
-
-              if (attrs[i].escaped.match(/^https*:/)) {
-                this.attr = attrs[i].escaped
-                local_image = false
-              }
-              if (attrs[i].escaped.match(/^ftp:/)) {
-                this.attr = attrs[i].escaped
-                local_image = false
-              } else if (attrs[i].escaped.match(/do=export_code/)) {
-                this.export_code = true
-              } else if (attrs[i].escaped.match(/^nntp:/)) {
-                this.attr = attrs[i].escaped
-                local_image = false
-              } else if (attrs[i].escaped.match(/^mailto:/)) {
-                this.attr = attrs[i].escaped.replace(/mailto:/, '')
-                local_image = false
-              } else if (attrs[i].escaped.match(/m-files/)) {
-                this.attr = attrs[i].escaped
-                this.mfile = attrs[i].escaped
-                local_image = false
-              } else if (attrs[i].escaped.match(/^file:/)) {  // samba share
-                var url = attrs[i].value.replace(/file:[\/]+/, '')
-                url = url.replace(/[\/]/g, '\\')
-                url = '\\\\' + url
-                this.attr = url
-                local_image = false
-              }
-              // external mime types after they've been saved first time
-              else if (http && !media_type && (matches = attrs[i].escaped.match(/fetch\.php(.*)/))) {
-                if (matches[1].match(/media=/)) {
-                  elems = matches[1].split(/=/)
-                  this.attr = elems[1]
-                } else {   // nice urls
-                  matches[1] = matches[1].replace(/^\//, '')
-                  this.attr = matches[1]
-                }
-
-                if (typeof config_animal !== 'undefined') {
-                  var regex = new RegExp(config_animal + '\/file\/(.*)')
-                  matches = attrs[i].escaped.match(regex)
-                  if (matches && matches[1]) this.attr = matches[1]
-                  if (this.attr) this.attr = this.attr.replace(/\//g, ':')
-                }
-                local_image = false
-
-                this.attr = decodeURIComponent ? decodeURIComponent(this.attr) : unescape(this.attr)
-                if (!this.attr.match(/^:/)) {
-                  this.attr = ':' + this.attr
-                }
-                this.external_mime = true
-              } else {
-                local_image = false
-
-                matches = attrs[i].escaped.match(/doku.php\?id=(.*)/)
-                if (matches && save_url) {
-                  var rx = DOKU_BASE + 'doku.php'
-                  if (!attrs[i].escaped.match(rx)) {
-                    this.link_class == 'urlextern'
-                    this.attr = save_url
-                    matches = null
-                  }
-                }
-                if (!matches) {
-                  matches = attrs[i].escaped.match(/doku.php\/(.*)/)
-                }
-                /* previously saved internal link with query string
-                  requires initial ? to be recognized by DW. In Anteater and later */
-                if (matches) {
-                  if (!matches[1].match(/\?/) && matches[1].match(/&amp;/)) {
-                    qs_set = true
-                    matches[1] = matches[1].replace(/&amp;/, '?')
-                  }
-                }
-                if (matches && matches[1]) {
-                  if (!matches[1].match(/^:/)) {
-                    this.attr = ':' + matches[1]
-                  } else {
-                    this.attr = matches[1]
-                  }
-
-                  if (this.attr.match(/\.\w+$/)) {  // external mime's first access
-                    if (type && type == 'other_mime') {
-                      this.external_mime = true
-                    } else {
-                      for (var n = i + 1; n < attrs.length; n++) {
-                        if (attrs[n].value.match(/other_mime/)) { this.external_mime = true }
-                        break
-                      }
-                    }
-                  }
-                } else {
-                  matches = attrs[i].value.match(/\\\\/)   // Windows share
-                  if (matches) {
-                    this.attr = attrs[i].escaped
-                    local_image = false
-                  }
-                }
-              }
-
-              if (this.link_class == 'media') {
-                if (attrs[i].value.match(/http:/)) {
-                  local_image = false
-                }
-              }
-
-              if (!this.attr && this.link_title) {
-                if (matches = this.link_class.match(/media(.*)/)) {
-                  this.link_title = decodeURIComponent(safe_convert(this.link_title))
-                  this.attr = this.link_title
-                  var m = matches[1].split(/_/)
-                  if (m && m[1]) {
-                    media_type = m[1]
-                  } else if (m) {
-                    media_type = m[0]
-                  } else media_type = 'mf'
-                  if (!this.attr.match(/^:/) && !this.attr.match(/^https?\:/)) {
-                    this.attr = ':' + this.attr.replace(/^\s+/, '')
-                  }
-                  this.external_mime = true
-                  local_image = false
-                }
-              }
-
-              if (this.attr.match && this.attr.match(/%[a-fA-F0-9]{2}/) && (matches = this.attr.match(/userfiles\/file\/(.*)/))) {
-                matches[1] = matches[1].replace(/\//g, ':')
-                if (!matches[1].match(/^:/)) {
-                  matches[1] = ':' + matches[1]
-                }
-                this.attr = decodeURIComponent ? decodeURIComponent(matches[1]) : unescape(matches[1])
-                this.attr = decodeURIComponent ? decodeURIComponent(this.attr) : unescape(this.attr)
-                this.external_mime = true
-              } else if (this.attr && this.attr.match(/%[a-fA-F0-9]{2}/)) {
-                this.attr = decodeURIComponent(this.attr)
-                this.attr = decodeURIComponent(this.attr)
-              }
-
-              // alert('title: ' + this.link_title + '  class: ' + this.link_class + ' export: ' +this.export_code);
-              if (this.link_title && this.link_title.match(/Snippet/)) this.code_snippet = true
-
-              /* anchors to current page without prefixing namespace:page */
-              if (attrs[i].value.match(/^#/) && this.link_class.match(/wikilink/)) {
-                this.attr = attrs[i].value
-                this.link_title = false
-              }
-
-              /* These two conditions catch user_rewrite not caught above */
-              if (this.link_class.match(/wikilink/) && this.link_title) {
-                this.external_mime = false
-                if (!this.attr) {
-                  this.attr = this.link_title
-                }
-                if (!this.attr.match(/^:/)) {
-                  this.attr = ':' + this.attr
-                }
-                if (this.attr.match(/\?.*?=/)) {
-                  var elems = this.attr.split(/\?/)
-                  elems[0] = elems[0].replace(/\//g, ':')
-                  this.attr = elems[0] + '?' + elems[1]
-                } else {
-                  this.attr = this.attr.replace(/\//g, ':')
-                }
-
-                /* catch query strings attached to internal links for .htacess nice urls  */
-                if (!qs_set && attrs[i].name == 'href') {
-                  if (!this.attr.match(/\?.*?=/) && !attrs[i].value.match(/doku.php/)) {
-                    var qs = attrs[i].value.match(/(\?.*)$/)
-                    if (qs && qs[1]) this.attr += qs[1]
-                  }
-                }
-              } else if (this.link_class.match(/mediafile/) && this.link_title && !this.attr) {
-                this.attr = this.link_title
-                this.external_mime = true
-
-                if (!this.attr.match(/^:/)) {
-                  this.attr = ':' + this.attr
-                }
-              } else if (this.link_class.match(/interwiki/)) {
-                interwiki_class = this.link_class
-              }
-
-              if (this.link_class == 'urlextern' && !this.mfile && save_url) {
-                this.attr = save_url
-                this.external_mime = false  // prevents external links to images from being converted to image links
-              }
-              if (this.in_endnotes) {
-                if (this.link_title) {
-                  this.bottom_url = this.link_title  // save for bottom urls
-                } else if (this.attr) {
-                  this.bottom_url = this.attr
-                }
-              }
-              this.link_title = ''
-              this.link_class = ''
-              //  break;
-            }
-          }
-
-          if (interwiki_class && interwiki_title) {
-            this.is_iwiki(interwiki_class, interwiki_title)
-            interwiki_class = ''
-            interwiki_title = ''
+          if (tag === 'a') {
+            this.linkObj.addAttr(attrs[i], this)
           }
 
           if (tag == 'sup') {
@@ -1323,6 +1484,11 @@ function parse_wikitext (id) {
           }   // End img
         }   // End Attributes Loop
 
+        if (this.linkObj && tag === 'a') {
+          this.linkObj.processAttrs(this)
+          tag = 'blank'
+        }
+
         if (this.is_smiley) {
           if (alt) {
             activeResults += alt + ' '
@@ -1331,7 +1497,6 @@ function parse_wikitext (id) {
           this.is_smiley = false
           return
         }
-        if (this.link_only) tag = 'img'
         if (tag === 'br') {
           if (this.in_multi_plugin || this.code_type) {
             // These are the cases where a simple '\n'
@@ -1389,38 +1554,31 @@ function parse_wikitext (id) {
             this.prev_list_level = -1
           }
         }
-        if (tag == 'a' && this.list_level) {
-          HTMLLinkInList = true
-        }
+        // if (tag == 'a' && this.list_level) {
+        //   HTMLLinkInList = true
+        // }
         if (tag == 'a' && local_image) {
-          this.xcl_markup = true
-          return
-        } else if (tag == 'a' && (this.export_code || this.code_snippet)) {
-          return
-        } else if (tag == 'a' && this.footnote) {
+        //   this.xcl_markup = true
+        //   return
+        // } else if (tag === 'a' && (this.export_code || this.code_snippet)) {
+        //   return
+        } else if (tag === 'a' && this.footnote) {
           tag = 'fn_start'
         } else if (tag == 'a' && bottom_note) {
           HTMLParserTopNotes.push(this.id)
-        } else if (tag == 'a' && this.external_mime) {
-          if (this.in_endnotes) {
-            this.link_class = 'media'
-            return
-          }
+        // } else if (tag == 'a' && this.externalMime) {
+        //   if (this.in_endnotes) {
+        //     this.link_class = 'media'
+        //     return
+        //   }
 
-          if (media_class && media_class == 'mediafile') {
-            activeResults += markup['img']
-            activeResults += this.attr + '|'
-            this.is_mediafile = true
-          }
+        //   if (media_class && media_class == 'mediafile') {
+        //     activeResults += markup['img']
+        //     activeResults += this.attr + '|'
+        //     this.is_mediafile = true
+        //   }
 
-          return
-        } else if (this.in_font) {
-          if (tag == 'a') {
-            activeResults = activeResults.replace(/__STYLE__/, '[[' + this.attr + '|')
-            this.in_font = false
-          }
-          return
-          /* <font 18pt:bold,italic/garamond;;color;;background_color>  */
+        //   return
         }
 
         if (this.in_endnotes && tag == 'a') return
@@ -1433,10 +1591,7 @@ function parse_wikitext (id) {
           activeResults += markup[tag]          // Set tag
         }
 
-        if (tag == 'a' && this.attr) {
-          this.attr = this.attr.replace(/%7c/, '%257c')
-          activeResults += this.attr + '|'
-        } else if (tag == 'img') {
+        if (tag == 'img') {
           var link_type = this.image_link_type
           this.image_link_type = ''
           if (this.link_only) link_type = 'link_only'
@@ -1568,8 +1723,8 @@ function parse_wikitext (id) {
           return
         }
         tag = '\n\n'
-      } else if (tag == 'a' && this.external_mime) {
-        this.external_mime = false
+      } else if (tag == 'a' && this.externalMime) {
+        this.externalMime = false
         if (this.is_mediafile) {
           tag = '}} '
         } else return
@@ -1883,27 +2038,6 @@ function parse_wikitext (id) {
 
   activeResults = activeResults.replace(/\{ \{ rss&gt;Feed:/mg, '{{rss&gt;http://')
   activeResults = activeResults.replace(/~ ~ (NOCACHE|NOTOC)~ ~/mg, '~~' + '$1' + '~~')
-  if (HTML_InterWiki) {
-    var ReplaceLinkMatch = function (tag, link) {
-      tag_1 = tag.replace(/oIWIKIo(.*)cIWIKIc/, '$1')
-      if (tag_1 == link) return true
-      link = link.replace(/\s/, '%20')
-      return (link == tag_1)
-    }
-    activeResults = activeResults.replace(/\[\[(\w+\.?\w{0,12})>(.*?)\|(.*?)\]\]/gm, function (match, id, iw_replace, link_text) {
-      if (iw_replace == 'oIWIKIocIWIKIc') iw_replace = link_text
-
-      if ((iw_replace == 'oIWIKIo' + link_text.replace(/\s/, '%20') + 'cIWIKIc') || (iw_replace == link_text) || ReplaceLinkMatch(iw_replace, link_text)) {
-        link_text = ''
-      } else {
-        link_text = '|' + link_text
-      }
-
-      return ('[[' + id + '>' + iw_replace + link_text + ']]')
-    })
-  }
-
-  activeResults = activeResults.replace(/>.*?oIWIKIo(.*?)cIWIKIc/mg, '>' + '$1')
 
   if (HTMLParser_FORMAT_SPACE) {
     if (HTMLParser_COLSPAN) {
@@ -1942,14 +2076,14 @@ function parse_wikitext (id) {
     }
   }
 
-  /* fix for links in lists, at ends of lines, which cause loss of line-feeds */
-  if (HTMLLinkInList) {
-    activeResults = activeResults.replace(/(\]\]|\}\})(\s+)(\*|-)/mg,
-      function (match, link, spaces, type) {
-        spaces = spaces.replace(/\n/, '')
-        return (link + '\n' + spaces + type)
-      })
-  }
+  // /* fix for links in lists, at ends of lines, which cause loss of line-feeds */
+  // if (HTMLLinkInList) {
+  //   activeResults = activeResults.replace(/(\]\]|\}\})(\s+)(\*|-)/mg,
+  //     function (match, link, spaces, type) {
+  //       spaces = spaces.replace(/\n/, '')
+  //       return (link + '\n' + spaces + type)
+  //     })
+  // }
 
   var line_break_final = '\\\\ '
   if (HTMLParser_LBR) {
@@ -1992,6 +2126,13 @@ function parse_wikitext (id) {
       return match
     })
   }  // HTMLParserFont end
+
+  if (HTMLFontInLinkMerged) {
+    var v = jQuery('#fontMergedInLinks').val()
+    if (!v) {
+      jQuery('#dw__editform').append('<input type="hidden" id="fontMergedInLinks" name="fontMergedInLinks" value="del" />')
+    }
+  }
 
   if (HTMLParserTopNotes.length) {
     activeResults = activeResults.replace(/<sup>\(\(\){2,}\s*<\/sup>/g, '')

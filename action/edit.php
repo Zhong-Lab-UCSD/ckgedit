@@ -344,6 +344,21 @@ class action_plugin_ckgedit_edit extends DokuWiki_Action_Plugin
             );
             
             $text = preg_replace_callback(
+                '/~~START_HTML_BLOCK~~[\n\s]*<code>[\n\s]*(.*?)[\n\s]*<\/code>[\n\s]*~~CLOSE_HTML_BLOCK~~/ms',
+                create_function(
+                    '$matches',
+                    '$tmp = explode("\n", $matches[1]);
+                    for($n=0; $n<7; $n++) {
+                        if( (preg_match("/(<p>\s*)*(&nbsp;|\s+)<\/p>/",$tmp[$n])) || (preg_match("/^\s+$/",$tmp[$n]))) {
+                            unset($tmp[$n]);
+                        }
+                    }
+                    return htmlentities("~~START_HTML_BLOCK~~" . implode("\n",$tmp) . "~~CLOSE_HTML_BLOCK~~"); '
+                ),
+                $text
+            );
+
+            $text = preg_replace_callback(
                 '/(\|\s*)(<code>|<file>)(.*?)(<\/code>|<\/file>)\n_ckgedit_NPBBR_(?=.*?\|)/ms',
                 create_function(
                     '$matches',
@@ -406,7 +421,9 @@ class action_plugin_ckgedit_edit extends DokuWiki_Action_Plugin
                 $text
             );
         }
+        error_log($text);
         $this->xhtml = $this->_render_xhtml($text);
+        error_log($this->xhtml);
 
         $this->xhtml = preg_replace("/~~TABLE_CELL_WRAP_START~~\s*<(wrap|block|inline)>/msi", "", $this->xhtml);
         $this->xhtml = preg_replace("/<(\/wrap|\/block|\/inline)>\s*~~TABLE_CELL_WRAP_STOP~~/msi", "", $this->xhtml);
@@ -447,24 +464,6 @@ class action_plugin_ckgedit_edit extends DokuWiki_Action_Plugin
                 $this->xhtml
             );
         }
-        $this->xhtml = preg_replace_callback(
-            '/~~START_HTML_BLOCK~~[\n\s]*(.*?)CLOSE_HTML_BLOCK/ms',
-            create_function(
-                '$matches',
-                '$matches[1] = str_replace("&amp;","&",$matches[1]);
-                $matches[1] =  html_entity_decode($matches[1],ENT_QUOTES, "UTF-8");
-                $matches[1] = preg_replace("/<\/?code.*?>/", "",$matches[1]);
-                $matches[1] = preg_replace("/^\s*<\/p>/","",$matches[1]);
-                $tmp = explode("\n", $matches[1]);
-                for($n=0; $n<7; $n++) {
-                    if( (preg_match("/(<p>\s*)*(&nbsp;|\s+)<\/p>/",$tmp[$n])) || (preg_match("/^\s+$/",$tmp[$n]))) {
-                        unset($tmp[$n]);
-                    }
-                }
-                return "~~START_HTML_BLOCK~~" . implode("\n",$tmp) . "CLOSE_HTML_BLOCK"; '
-            ),
-            $this->xhtml
-        );
         
         $this->xhtml = preg_replace_callback(
             '/(<pre)(.*?)(>)(.*?)(<\/pre>)/ms',
@@ -1177,6 +1176,9 @@ CKEDITOR_REPLACE;
             // replace &lt;font back so that the default renderer can render
             $text = preg_replace('/&lt;(?=\/?font)/msi', "<", $text);
         }
+
+        $text = preg_replace('/~~START_HTML_BLOCK~~/msi', "~~START_HTML_BLOCK__CKG_EDIT_~~", $text);
+        $text = preg_replace('/~~CLOSE_HTML_BLOCK~~/msi', "~~CLOSE_HTML_BLOCK__CKG_EDIT_~~", $text);
     
         $instructions = p_get_instructions("=== header ==="); // loads DOKU_PLUGINS array --M.T. Dec 22 2009
         
@@ -1221,6 +1223,20 @@ CKEDITOR_REPLACE;
         trigger_event('RENDERER_CONTENT_POSTPROCESS', $data);
         $xhtml = $Renderer->doc;
             
+        $xhtml = preg_replace_callback(
+            '/~~START_HTML_BLOCK__CKG_EDIT_~~[\n\s]*(.*?)[\n\s]*~~CLOSE_HTML_BLOCK__CKG_EDIT_~~/ms',
+            function ($matches) {
+                $tmp = explode("\n", $matches[1]);
+                $tmp = array_filter($tmp, function ($item) {
+                    return $item !== "";
+                });
+                return "<p>~~START_HTML_BLOCK~~</p>\n<p>" .
+                    implode("<br>\n",$tmp) .
+                    "</p>\n<p>~~CLOSE_HTML_BLOCK~~</p>\n";
+            },
+            $xhtml
+        );
+
         /**
         * Alternative to  the one liner at 1179:  $xhtml = str_replace(array('oiwikio','ciwikic'),array('oIWIKIo','cIWIKIc'),$xhtml);
         *  if it turns out that there are users using  'oiwikio','ciwikic'

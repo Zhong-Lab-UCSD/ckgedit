@@ -23,6 +23,9 @@ class action_plugin_ckgedit_save extends DokuWiki_Action_Plugin {
          if (isset($_REQUEST["fontdel"]) ) {
              msg($this->getLang("fontdel"),1);           
          }
+         if (isset($_REQUEST["fontMergedInLinks"]) ) {
+             msg($this->getLang("fontMergedInLinks"), 1);           
+         }
          if (isset($_REQUEST["formatdel"]) ) {
              msg($this->getLang("formatdel"),1);           
          }         

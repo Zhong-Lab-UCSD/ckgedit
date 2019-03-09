@@ -11,7 +11,7 @@ var HTMLParser_Elements = new Array();
 (function(){
 
 	// Regular Expressions for parsing tags and attributes
-	var startTag = /^<(\w+)((?:\s+\w+(?:\s*=\s*(?:(?:"[^"]*")|(?:'[^']*')|[^>\s]+))?)*)\s*(\/?)>/,
+    var startTag = /^<(\w+)((?:\s+[^\s\/>"'=]+(?:\s*=\s*(?:(?:"[^"]*?")|(?:'[^']*?')|[^>\s]+))?)*)\s*(\/?)>/,
 		endTag = /^<\/(\w+)[^>]*>/,
 		attr = /(\w+)(?:\s*=\s*(?:(?:"((?:\\.|[^"])*)")|(?:'((?:\\.|[^'])*)')|([^>\s]+)))?/g;
 		
@@ -62,8 +62,10 @@ var HTMLParser_Elements = new Array();
                  html = html.replace(/~~START_HTML_BLOCK~~|~~CLOSE_HTML_BLOCK~~/gm,"");
                 } 
         
-             html = html.replace(/(<p>)*\s*~~START_HTML_BLOCK~~\s*(<\/p>)*([\s\S]+)~~CLOSE_HTML_BLOCK~~\s*(<\/p>)*/gm, function(match,p,p1,text,p2) {
+             html = html.replace(/(<p>)*\s*~~START_HTML_BLOCK~~\s*(<\/p>)*([\s\S]+?)~~CLOSE_HTML_BLOCK~~\s*(<\/p>)*/gm, function(match,p,p1,text,p2) {
              text = text.replace(/<\/?div.*?>/gm,"");
+             text = text.replace(/<\/?p.*?>/gm, "");
+             text = text.replace(/<\/?br.*?>/gm,"");
              text = text.replace(/<code>/gm,"");             
              text = text.replace(/<\/code>/gm,"");             
              text = text.replace(/</gm,"&lt;");
