@@ -700,6 +700,7 @@ function parse_wikitext (id) {
   var LinkObj = class LinkObj {
     constructor (prevText, parser, oldLink) {
       this.fontObj = null
+      this.formatTags = {}
       this.linkClass = null
       this.linkTitle = null
       this.mediaClass = null
@@ -735,10 +736,10 @@ function parse_wikitext (id) {
       this.bottom_url = false
     }
 
-    isRegularLink () {
+    isImageWrapper () {
       // return true if anything similar to `[[<whatever>|<whatever>]]` needs
       // to be returned for this link object
-      return !this.imgLinkType && !!this.linkClass.match(/someRegex/)
+      return !!this.imgLinkType
     }
 
     /**
@@ -776,14 +777,13 @@ function parse_wikitext (id) {
 
         let labelPart = this.getLabelPartIfNeeded(activeResults)
 
-        if (this.isRegularLink() && this.linkPart) {
-          parsedText += '[[' + this.linkPart + labelPart + ']]'
+        if (!this.isImageWrapper() && this.linkPart) {
+          parsedText += this.getLinkTextWithFormatTags(this.linkPart, labelPart)
         } else {
           parsedText += activeResults
         }
       }
 
-      parser.in_link = false
       return parsedText
     }
 
@@ -805,6 +805,16 @@ function parse_wikitext (id) {
         }
       }
       return label ? '|' + label : ''
+    }
+
+    getLinkTextWithFormatTags (linkPart, labelPart) {
+      let result = '[[' + linkPart + labelPart + ']]'
+      for (let key in this.formatTags) {
+        if (this.formatTags.hasOwnProperty(key)) {
+          result = key + result + key
+        }
+      }
+      return result
     }
 
     /**
@@ -1121,7 +1131,9 @@ function parse_wikitext (id) {
     }
 
     addFontFromTag (tag) {
-
+      if (!this.formatTags.hasOwnProperty(tag)) {
+        this.formatTags[tag] = true
+      }
     }
 
     addFont (fontObj) {
@@ -1157,17 +1169,7 @@ function parse_wikitext (id) {
     link_title: '',
     link_class: '',
     image_link_type: '',
-    td_align: '',
     in_td: false,
-    td_colspan: 0,
-    td_rowspan: 0,
-    rowspan_col: 0,
-    last_column: -1,
-    row: 0,
-    col: 0,
-    td_no: 0,
-    tr_no: 0,
-    current_row: false,
     /**
      * tableStack - an array of tables currently in the hierarchy.
      * @type {Array<TableObj>}
@@ -1184,6 +1186,10 @@ function parse_wikitext (id) {
     prev_list_level: -1,
     list_started: false,
     xcl_markup: false,
+    /**
+     * linkObj - an object for the current link.
+     * @type {LinkObj}
+     */
     linkObj: null,
     last_tag: '',
     code_type: false,
@@ -1204,7 +1210,6 @@ function parse_wikitext (id) {
     using_fonts: false,
     interwiki: false,
     bottom_url: false,
-    is_mediafile: false,
     end_nested: false,
     mfile: false,
 
@@ -1225,8 +1230,9 @@ function parse_wikitext (id) {
       this_debug = this.dbg;
       */
       if (markup[tag]) {
-        if (format_chars[tag] && this.in_link) {
-          this.link_formats.push(tag)
+        if (format_chars[tag] && this.linkObj) {
+          this.linkObj.addFontFromTag(tag)
+          HTMLFontInLinkMerged = true
           return
         }
         if (format_chars[tag] && (this.in_font || this.in_header)) {
@@ -1256,8 +1262,6 @@ function parse_wikitext (id) {
           markup['li'] = ''
           this.prev_li = new Array()
         }
-
-        this.is_mediafile = false
 
         if (tag == 'img') {
           var img_size = '?'
@@ -1312,6 +1316,7 @@ function parse_wikitext (id) {
 
         if (tag === 'a') {
           this.linkObj = new LinkObj(activeResults, this)
+          activeResults = ''
         }
 
         for (var i = 0; i < attrs.length; i++) {
@@ -1645,9 +1650,14 @@ function parse_wikitext (id) {
         return
       }
       if (this.in_endnotes && tag == 'a') return
-      if (this.in_link && format_chars[current_tag] && this.link_formats.length) {
-        return
-      } else if (tag == 'a' && !this.link_formats.length) this.in_link = false
+      if (tag === 'a' && this.linkObj) {
+        activeResults = this.linkObj.close(activeResults, this)
+        delete this.linkObj
+        tag = 'blank'
+      }
+      // if (this.in_link && format_chars[current_tag] && this.link_formats.length) {
+      //   return
+      // } else if (tag == 'a' && !this.link_formats.length) this.in_link = false
 
       if (this.link_only) {
         this.link_only = false
@@ -1723,11 +1733,6 @@ function parse_wikitext (id) {
           return
         }
         tag = '\n\n'
-      } else if (tag == 'a' && this.externalMime) {
-        this.externalMime = false
-        if (this.is_mediafile) {
-          tag = '}} '
-        } else return
       } else if (tag == 'pre') {
         tag = markup_end[tag]
         if (this.code_type) {
@@ -1781,28 +1786,6 @@ function parse_wikitext (id) {
         HTMLParser_FORMAT_SPACE = markup['format_space']
       }
       this.last_tag = current_tag
-
-      if (current_tag == 'a' && this.link_formats.length) {
-        var end_str = activeResults.substring(this.link_pos)
-        var start_str = activeResults.substring(0, this.link_pos)
-        var start_format = ''
-        var end_format = ''
-        for (var i = 0; i < this.link_formats.length; i++) {
-          var fmt = markup[this.link_formats[i]]
-          var endfmt = markup_end[this.link_formats[i]] ? markup_end[this.link_formats[i]] : fmt
-          start_format += markup[this.link_formats[i]]
-          end_format = endfmt + end_format
-        }
-
-        start_str += start_format
-        end_str += end_format
-        activeResults = start_str + end_str
-        this.link_formats = new Array()
-        this.in_link = false
-      } else if (current_tag == 'a') {
-        this.link_formats = new Array()
-        this.in_link = false
-      }
     },
 
     chars: function (text) {
@@ -1849,7 +1832,7 @@ function parse_wikitext (id) {
       }
       if (!this.code_type) {
         text = text.replace(/\x20{6,}/, '   ')
-        if (this.in_td && !this.in_link) {
+        if (this.in_td && !this.linkObj) {
           text = text.replace(/(&nbsp;)+\s*/, '~~CKG_TABLE_NBSP~~')
         } else {
           text = text.replace(/(&nbsp;)+/, ' ')
