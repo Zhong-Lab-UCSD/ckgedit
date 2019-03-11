@@ -546,12 +546,12 @@ function parse_wikitext (id) {
    *    Dokuwiki code is generated.
    */
   var SpanObj = class SpanObj {
-    constructor (prevText) {
+    constructor (prevText, fontObj) {
       this.prevText = prevText
       this.attr = {}
-      this.noBrTagOpen = false
-      this.noSpaceTagEnd = false
-      this.fontObj = null
+      this.noBrTagOpen = !!fontObj
+      this.noSpaceTagEnd = !!fontObj
+      this.fontObj = fontObj || null
     }
 
     /**
@@ -568,6 +568,11 @@ function parse_wikitext (id) {
       }
       return this.prevText + (this.noBrTagOpen ? '' : '\n') + parsedText +
         (this.noSpaceTagEnd ? '' : ' ')
+    }
+
+    mergeWithParentLink (activeResults, linkObj) {
+      linkObj.addFont(this.fontObj)
+      return this.prevText + activeResults
     }
 
     /**
@@ -621,7 +626,6 @@ function parse_wikitext (id) {
       } else if (!ckgedit_xcl_styles && attr.name === 'style') {
         this.noBrTagOpen = true
         this.noSpaceTagEnd = true
-        parser.using_fonts = true
         this.setFontAttr(attr.value)
       }
     }
@@ -753,7 +757,7 @@ function parse_wikitext (id) {
     close (activeResults, parser) {
       // Note: if an image is here with additional texts to the end,
       // the link will need to be broken into two consecutive parts
-      let parsedText = this.prevText
+      let parsedText = ''
 
       // first determine whether this link should use image tags
       if (this.linkOnly ||
@@ -762,26 +766,36 @@ function parse_wikitext (id) {
         )
       ) {
         // use img tags instead of link tags
-        parsedText += '{{' + this.linkPart + '?linkOnly' +
+        parsedText = '{{' + this.linkPart + '?linkOnly' +
           this.getLabelPartIfNeeded(activeResults) + '}}'
       } else {
         this.linkPart = this.linkPart.replace(/%7c/, '%257c')
+        // The following part is to break the following pattern:
+        // `<a ...> some text {{ some tag }} some other text </a>`
+        // into `<a ...>some text</a> <a ...>{{ some tag }}</a> <a ...>some other text</a>`
         let match
-        while (match = activeResults.match(/^\s*((?:(?!{{).)*?)\s*({{(?:(?!}}).)*?}})\s*(.*?)\s*$/m)) {
+        while (match = activeResults.match(/^\s*((?:(?!{{).)*?)(\s*)({{(?:(?!}}).)*?}})(\s*)(.*?)\s*$/m)) {
           let linkFrag = new LinkObj(this.prevText, parser, this)
-          this.prevText = linkFrag.close(match[1])
+          this.prevText = linkFrag.close(match[1]) + (match[2] ? ' ' : '')
           linkFrag = new LinkObj(this.prevText, parser, this)
-          this.prevText = linkFrag.close(match[2])
-          activeResults = match[3]
+          this.prevText = linkFrag.close(match[3]) + (match[4] ? ' ' : '')
+          activeResults = match[5]
         }
 
         let labelPart = this.getLabelPartIfNeeded(activeResults)
 
         if (!this.isImageWrapper() && this.linkPart) {
-          parsedText += this.getLinkTextWithFormatTags(this.linkPart, labelPart)
+          parsedText = this.getLinkTextWithFormatTags(this.linkPart, labelPart)
         } else {
-          parsedText += activeResults
+          parsedText = activeResults
         }
+      }
+
+      if (this.fontObj) {
+        let spanObj = new SpanObj(this.prevText, this.fontObj)
+        parsedText = spanObj.close(parsedText)
+      } else {
+        parsedText = this.prevText + parsedText
       }
 
       return parsedText
@@ -811,7 +825,8 @@ function parse_wikitext (id) {
       let result = '[[' + linkPart + labelPart + ']]'
       for (let key in this.formatTags) {
         if (this.formatTags.hasOwnProperty(key)) {
-          result = key + result + key
+          result = markup[key] + result +
+            (markup_end[key] ? markup_end[key] : markup[key])
         }
       }
       return result
@@ -1207,7 +1222,6 @@ function parse_wikitext (id) {
     prev_li: new Array(),
     link_only: false,
     in_font: false,
-    using_fonts: false,
     interwiki: false,
     bottom_url: false,
     end_nested: false,
@@ -1233,6 +1247,7 @@ function parse_wikitext (id) {
         if (format_chars[tag] && this.linkObj) {
           this.linkObj.addFontFromTag(tag)
           HTMLFontInLinkMerged = true
+          tag = 'blank'
           return
         }
         if (format_chars[tag] && (this.in_font || this.in_header)) {
@@ -1640,7 +1655,9 @@ function parse_wikitext (id) {
     },
 
     end: function (tag) {
-      if (format_chars[tag] && this.in_header) {
+      if (format_chars[tag] && this.linkObj) {
+        tag = 'blank'
+      } else if (format_chars[tag] && this.in_header) {
         activeResults += ' '
         if (tag == 'sup' || tag == 'sub' || tag == 'del' || tag == 'strike' || tag == 's') {
           var t = 'temp_c' + tag
@@ -1675,10 +1692,13 @@ function parse_wikitext (id) {
       }
       if (tag === 'span') {
         let currSpan = this.spanStack.pop()
-        activeResults = currSpan.close(activeResults)
+        if (this.linkObj) {
+          activeResults = currSpan.mergeWithParentLink(
+            activeResults, this.linkObj)
+        } else {
+          activeResults = currSpan.close(activeResults)
+        }
         tag = 'blank'
-        this.using_fonts = this.spanStack.length > 0 &&
-          this.spanStack.some(spanElem => !!spanElem.fontObj)
       }
       if (tag == 'dl' && this.downloadable_code) {
         this.downloadable_code = false
@@ -1818,7 +1838,10 @@ function parse_wikitext (id) {
         return (match.replace(/(&gt;)/g, '\__QUOTE__'))
       })
       // adjust spacing on multi-formatted strings
-      activeResults = activeResults.replace(/([\/\*_]{2})_FORMAT_SPACE_([\/\*_]{2})_FORMAT_SPACE_$/, '$1$2@@_SP_@@')
+      activeResults = activeResults.replace(/(?:(?:[\/\*_]{2})_FORMAT_SPACE_){2,}$/,
+        match => {
+          return match.replace(/_FORMAT_SPACE_/g, '') + '@@_SP_@@'
+        })
       if (text.match(/^&\w+;/)) {
         activeResults = activeResults.replace(/_FORMAT_SPACE_\s*$/, '')   // remove unwanted space after character entity
       }
@@ -1842,7 +1865,7 @@ function parse_wikitext (id) {
           if (!this.list_started || this.in_table) text = text.replace(/^\s+/, '@@_SP_@@')
         } else if (this.last_tag == 'a') {
           text = text.replace(/^\s{2,}/, ' ')
-        } else if (!this.using_fonts) text = text.replace(/^\s+/, '')
+        }
 
         if (text.match(/nowiki&gt;/)) {
           HTMLParser_NOWIKI = true
