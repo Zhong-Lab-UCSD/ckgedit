@@ -521,7 +521,7 @@ function parse_wikitext (id) {
    * @class
    * SpanObj - an object for `<span>` elements
    * This is mainly designed to process nested font tags created by CKEditor
-   * 
+   *
    * @property {string} prevText - previous Dokuwiki text, to be included when
    *    the Dokuwiki code for this span is generated.
    *    This is used to cache the converted Dokuwiki code so far to create
@@ -674,7 +674,7 @@ function parse_wikitext (id) {
   /**
    * @class
    * LinkObj - an object for various link elements
-   * 
+   *
    * @property {string} prevText - previous Dokuwiki text, to be included when
    *    the Dokuwiki code for this span is generated.
    *    This is used to cache the converted Dokuwiki code so far to create
@@ -774,7 +774,9 @@ function parse_wikitext (id) {
         // `<a ...> some text {{ some tag }} some other text </a>`
         // into `<a ...>some text</a> <a ...>{{ some tag }}</a> <a ...>some other text</a>`
         let match
-        while (match = activeResults.match(/^\s*((?:(?!{{).)*?)(\s*)({{(?:(?!}}).)*?}})(\s*)(.*?)\s*$/m)) {
+        while ((match = activeResults.match(
+          /^\s*((?:(?!{{).)*?)(\s*)({{(?:(?!}}).)*?}})(\s*)(.*?)\s*$/m
+        ))) {
           let linkFrag = new LinkObj(this.prevText, parser, this)
           this.prevText = linkFrag.close(match[1]) + (match[2] ? ' ' : '')
           linkFrag = new LinkObj(this.prevText, parser, this)
@@ -873,7 +875,7 @@ function parse_wikitext (id) {
 
     processHref (hrefAttr, parser) {
       let qsSet = false
-      let http = !!hrefAttr.escaped.match(/https*:\/\//)
+      let http = !!hrefAttr.escaped.match(/https?:\/\//)
       let savedUrl
       if (http) {
         savedUrl = hrefAttr.escaped
@@ -904,7 +906,7 @@ function parse_wikitext (id) {
       }
 
       let matches
-      
+
       if (hrefAttr.escaped.match(/^(ftp|nntp):/)) {
         this.linkPart = hrefAttr.escaped
       } else if (hrefAttr.escaped.match(/do=export_code/)) {
@@ -926,7 +928,7 @@ function parse_wikitext (id) {
       ) {
         // external mime types after they've been saved first time
         if (matches[1].match(/media=/)) {
-          elems = matches[1].split(/=/)
+          let elems = matches[1].split(/=/)
           this.linkPart = elems[1]
         } else {   // nice urls
           matches[1] = matches[1].replace(/^\//, '')
@@ -934,7 +936,7 @@ function parse_wikitext (id) {
         }
 
         if (typeof config_animal !== 'undefined') {
-          let regex = new RegExp(config_animal + '\/file\/(.*)')
+          let regex = new RegExp(config_animal + '/file/(.*)')
           matches = hrefAttr.escaped.match(regex)
           if (matches && matches[1]) {
             this.linkPart = matches[1]
@@ -952,7 +954,7 @@ function parse_wikitext (id) {
         this.externalMime = true
       } else {
         matches = hrefAttr.escaped.match(/doku.php\?id=(.*)/)
-        if (matches && savedUrl) {
+        if (savedUrl) {
           let regex = DOKU_BASE + 'doku.php'
           if (!hrefAttr.escaped.match(regex)) {
             this.linkClass = 'urlextern'
@@ -960,6 +962,7 @@ function parse_wikitext (id) {
             matches = null
           }
         }
+
         if (!matches) {
           matches = hrefAttr.escaped.match(/doku.php\/(.*)/)
         }
@@ -979,7 +982,7 @@ function parse_wikitext (id) {
           }
 
           if (this.linkPart.match(/\.\w+$/)) {  // external mime's first access
-            if (type && type === 'other_mime') {
+            if (this.type && this.type === 'other_mime') {
               this.externalMime = true
             }
           }
@@ -998,11 +1001,11 @@ function parse_wikitext (id) {
       }
 
       if (!this.linkPart && this.linkTitle) {
-        if (matches = this.linkClass.match(/media(.*)/)) {
+        if ((matches = this.linkClass.match(/media(.*)/))) {
           this.linkTitle = decodeURIComponent(safe_convert(this.linkTitle))
           this.linkPart = this.linkTitle
           if (!this.linkPart.match(/^:/) &&
-            !this.linkPart.match(/^https?\:/)
+            !this.linkPart.match(/^https?:/)
           ) {
             this.linkPart = ':' + this.linkPart.replace(/^\s+/, '')
           }
@@ -1010,7 +1013,6 @@ function parse_wikitext (id) {
           this.localImage = false
         }
       }
-  
 
       if (this.linkPart.match && this.linkPart.match(/%[a-fA-F0-9]{2}/) &&
         (matches = this.linkPart.match(/userfiles\/file\/(.*)/))
@@ -1108,41 +1110,6 @@ function parse_wikitext (id) {
       if (this.linkClass.match(/interwiki/)) {
         this.interwikiClass = this.linkClass
       }
-    }
-
-    addFontFromDivAttr (fontAttrValue) {
-      let fontObj = {}
-      let matches = fontAttrValue.match(/font-family:\s*([^;]+);?/)
-      if (matches) {
-        fontObj.fontFamily = matches[1]
-      }
-
-      // matches = fontAttrValue.match(/font-size:\s*(\d+(\w+|%));?/);
-      matches = fontAttrValue.match(/font-size:\s*([^;]+);?/)
-      if (matches) {
-        matches[1] = matches[1].replace(/;/, '')
-        fontObj.fontSize = matches[1]
-      }
-      matches = fontAttrValue.match(/font-weight:\s*([^;]+);?/)
-      if (matches) {
-        fontObj.fontWeight = matches[1]
-      }
-      matches = fontAttrValue.match(/.*?color:\s*([^;]+);?/)
-      let bgcolorFound = false
-      if (matches) {
-        if (matches[0].match(/background/)) {
-          fontObj.fontBgcolor = matches[1]
-        } else {
-          fontObj.fontColor = matches[1]
-        }
-      }
-      if (!bgcolorFound) {  // catch MS Word which uses background:color-name instead of background-color:color-name
-        matches = fontAttrValue.match(/background:\s*([^;]+);?/)
-        if (matches && matches[0].match(/background/)) {
-          fontObj.fontBgcolor = matches[1]
-        }
-      }
-      return this.addFont(fontObj, parser)
     }
 
     addFontFromTag (tag) {
