@@ -70,13 +70,13 @@ class syntax_plugin_ckgedit_specials extends DokuWiki_Syntax_Plugin
         $this->Lexer->addSpecialPattern('~~COMPLEX_TABLES~~', $mode, 'plugin_ckgedit_specials');
         $this->Lexer->addSpecialPattern('~~TABLE_CELL_WRAP_(?:START|STOP)~~', $mode, 'plugin_ckgedit_specials');
         $this->Lexer->addSpecialPattern('~~NO_STYLING~~', $mode, 'plugin_ckgedit_specials');
-        $this->Lexer->addEntryPattern('~~START_HTML_BLOCK~~(?=.*?~~CLOSE_HTML_BLOCK~~)', $mode, 'plugin_ckgedit_specials');
+        $this->Lexer->addEntryPattern('~~START_HTML_BLOCK~~[\n\s]*<code>(?=.*?<\/code>[\n\s]*~~CLOSE_HTML_BLOCK~~)', $mode, 'plugin_ckgedit_specials');
         $this->Lexer->addEntryPattern('~~START_HTML_BLOCK__CKG_EDIT_~~(?=.*?~~CLOSE_HTML_BLOCK__CKG_EDIT_~~)', $mode, 'plugin_ckgedit_specials');
         $this->Lexer->addSpecialPattern('~~AUTO_INTERNAL_LINKS~~', $mode, 'plugin_ckgedit_specials');
     }
     public function postConnect()
     {
-        $this->Lexer->addExitPattern('~~CLOSE_HTML_BLOCK~~', 'plugin_ckgedit_specials');
+        $this->Lexer->addExitPattern('<\/code>[\n\s]*~~CLOSE_HTML_BLOCK~~', 'plugin_ckgedit_specials');
         $this->Lexer->addExitPattern('~~CLOSE_HTML_BLOCK__CKG_EDIT_~~', 'plugin_ckgedit_specials');
     }
 
@@ -101,8 +101,8 @@ class syntax_plugin_ckgedit_specials extends DokuWiki_Syntax_Plugin
                 // no break
             case DOKU_LEXER_ENTER:  return array($state, '', FALSE);
             case DOKU_LEXER_UNMATCHED:
-                $match = str_replace('<div class="table">', "", $match);
-                $match = preg_replace('/<\/?code>/ms', "", $match);
+                // $match = str_replace('<div class="table">', "", $match);
+                // $match = preg_replace('/<\/?code>/ms', "", $match);
                 return array($state, $match, TRUE);
             case DOKU_LEXER_EXIT:       return array($state, '', TRUE);
         }

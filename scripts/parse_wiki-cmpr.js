@@ -995,7 +995,7 @@ function parse_wikitext (id) {
       }
 
       if (this.linkClass === 'media') {
-        if (hrefAttr.value.match(/http:/)) {
+        if (hrefAttr.value.match(/https?:/)) {
           this.localImage = false
         }
       }
@@ -1043,7 +1043,7 @@ function parse_wikitext (id) {
       }
 
       /* These two conditions catch user_rewrite not caught above */
-      if (this.linkClass.match(/wikilink/) && this.linkTitle) {
+      if (this.linkClass && this.linkClass.match(/wikilink/) && this.linkTitle) {
         this.externalMime = false
         if (!this.linkPart) {
           this.linkPart = this.linkTitle
@@ -1068,7 +1068,7 @@ function parse_wikitext (id) {
             }
           }
         }
-      } else if (this.linkClass.match(/mediafile/) && this.linkTitle && !this.linkPart) {
+      } else if (this.linkClass && this.linkClass.match(/mediafile/) && this.linkTitle && !this.linkPart) {
         this.linkPart = this.linkTitle
         this.externalMime = true
 

@@ -353,7 +353,7 @@ class action_plugin_ckgedit_edit extends DokuWiki_Action_Plugin
                             unset($tmp[$n]);
                         }
                     }
-                    return htmlentities("~~START_HTML_BLOCK~~" . implode("\n",$tmp) . "~~CLOSE_HTML_BLOCK~~"); '
+                    return htmlentities("~~START_HTML_BLOCK__CKG_EDIT_~~" . implode("\n",$tmp) . "~~CLOSE_HTML_BLOCK__CKG_EDIT_~~"); '
                 ),
                 $text
             );
@@ -1136,13 +1136,13 @@ CKEDITOR_REPLACE;
         );
         
         // prevents utf8 conversions of quotation marks
-        $text = str_replace('"', "_ckgedit_QUOT_", $text);
+        $text = str_replace('"', "~_ckgedit_QUOT_~", $text);
 
         $text = preg_replace_callback(
             '/(<code.*?>)([^<]+)(<\/code>)/ms',
             create_function(
                 '$matches',
-                '$quot =  str_replace("_ckgedit_QUOT_",\'"\',$matches[2]); 
+                '$quot =  str_replace("~_ckgedit_QUOT_~",\'"\',$matches[2]); 
                 $quot = str_replace("\\\\ ","_ckgedit_NL",$quot); 
                 return $matches[1] . $quot . $matches[3];'
             ),
@@ -1153,8 +1153,8 @@ CKEDITOR_REPLACE;
             '/(<file.*?>)([^<]+)(<\/file>)/ms',
             create_function(
                 '$matches',
-                '$quot =  str_replace("_ckgedit_QUOT_",\'"\',$matches[2]); 
-                $quot = str_replace("\\\\ ","_ckgedit_NL",$quot); 
+                '$quot =  str_replace("~_ckgedit_QUOT_~",\'"\',$matches[2]); 
+                $quot = str_replace("\\\\ ","~_ckgedit_NL~",$quot); 
                 return $matches[1] . $quot . $matches[3];'
             ),
             $text
@@ -1177,9 +1177,6 @@ CKEDITOR_REPLACE;
             $text = preg_replace('/&lt;(?=\/?font)/msi', "<", $text);
         }
 
-        $text = preg_replace('/~~START_HTML_BLOCK~~/msi', "~~START_HTML_BLOCK__CKG_EDIT_~~", $text);
-        $text = preg_replace('/~~CLOSE_HTML_BLOCK~~/msi', "~~CLOSE_HTML_BLOCK__CKG_EDIT_~~", $text);
-    
         $instructions = p_get_instructions("=== header ==="); // loads DOKU_PLUGINS array --M.T. Dec 22 2009
         
         $instructions = p_get_instructions($text);
@@ -1290,8 +1287,8 @@ CKEDITOR_REPLACE;
         // remove empty paragraph: see _ckgedit_NPBBR_ comment above
         $xhtml = preg_replace('/<p>\s+_ckgedit_NPBBR_\s+<\/p>/ms', "\n", $xhtml);
         $xhtml = str_replace('_ckgedit_NPBBR_', "<span class='np_break'>&nbsp;</span>", $xhtml);
-        $xhtml = str_replace('_ckgedit_QUOT_', '&quot;', $xhtml);
-        $xhtml = str_replace('_ckgedit_NL', "\n", $xhtml);
+        $xhtml = str_replace('~_ckgedit_QUOT_~', '&quot;', $xhtml);
+        $xhtml = str_replace('~_ckgedit_NL~', "\n", $xhtml);
         $xhtml = str_replace('</pre>', "</pre><p>&nbsp;</p>", $xhtml);
         // inserts p before an initial codeblock to enable text entry above block
         $xhtml = preg_replace('/^<pre/', "<p>&nbsp;</p><pre", $xhtml);
