@@ -759,12 +759,20 @@ function parse_wikitext (id) {
       // the link will need to be broken into two consecutive parts
       let parsedText = ''
 
-      // first determine whether this link should use image tags
-      if (this.linkOnly ||
+      // process footnote links first (footnote and bottomNote)
+      if (this.footnote) {
+        parsedText = '((#' + this.linkPart + '))'
+        delete this.fontObj
+      } else if (parser.footnoteObj && !parser.footnoteContentObj &&
+        this.bottomNote
+      ) {
+        parser.footnoteObj.addLink(this)
+      } else if (this.linkOnly ||
         (this.externalMime &&
-          (parser.in_endnotes || this.mediaClass === 'mediafile')
+          (parser.inFootnoteSection || this.mediaClass === 'mediafile')
         )
       ) {
+        // then determine whether this link should use image tags
         // use img tags instead of link tags
         parsedText = '{{' + this.linkPart + '?linkOnly' +
           this.getLabelPartIfNeeded(activeResults) + '}}'
@@ -775,12 +783,14 @@ function parse_wikitext (id) {
         // into `<a ...>some text</a> <a ...>{{ some tag }}</a> <a ...>some other text</a>`
         let match
         while ((match = activeResults.match(
-          /^\s*((?:(?!{{).)*?)(\s*)({{(?:(?!}}).)*?}})(\s*)(.*?)\s*$/m
-        ))) {
+          /^\s*((?:(?!{{)\S)*?)(\s*)({{(?:(?!}}).)*?}})(\s*)(\S*?)\s*$/m
+        )) && (match[1] || match[5])) {
           let linkFrag = new LinkObj(this.prevText, parser, this)
-          this.prevText = linkFrag.close(match[1]) + (match[2] ? ' ' : '')
+          this.prevText = linkFrag.close(match[1], parser) +
+            (match[2] ? ' ' : '')
           linkFrag = new LinkObj(this.prevText, parser, this)
-          this.prevText = linkFrag.close(match[3]) + (match[4] ? ' ' : '')
+          this.prevText = linkFrag.close(match[3], parser) +
+            (match[4] ? ' ' : '')
           activeResults = match[5]
         }
 
@@ -879,6 +889,10 @@ function parse_wikitext (id) {
       let savedUrl
       if (http) {
         savedUrl = hrefAttr.escaped
+      }
+      if (this.footnote || this.bottomNote) {
+        this.linkPart = hrefAttr.escaped.replace('#', '')
+        return
       }
       if (hrefAttr.escaped.match(/\/lib\/exe\/detail.php/)) {
         this.imgLinkType = 'detail'
@@ -1081,13 +1095,13 @@ function parse_wikitext (id) {
         this.linkPart = savedUrl
         this.externalMime = false  // prevents external links to images from being converted to image links
       }
-      if (parser.in_endnotes) {
-        if (this.linkTitle) {
-          this.bottom_url = this.linkTitle  // save for bottom urls
-        } else if (this.linkPart) {
-          this.bottom_url = this.linkPart
-        }
-      }
+      // if (parser.in_endnotes) {
+      //   if (this.linkTitle) {
+      //     this.bottom_url = this.linkTitle  // save for bottom urls
+      //   } else if (this.linkPart) {
+      //     this.bottom_url = this.linkPart
+      //   }
+      // }
       this.linkTitle = null
       this.linkClass = null
     }
@@ -1146,6 +1160,60 @@ function parse_wikitext (id) {
     }
   }
 
+  /** 
+   * Footnote object.
+   * Corresponding to a `<div class="fn" ...></div>` element
+   */
+  var FootnoteObj = class FootnoteObj {
+    constructor (prevText, parser) {
+      this.linkedIds = []
+      this.content = null
+      this.prevText = prevText
+    }
+
+    /** 
+     * close the footnote object, replace the `((#<footnote_id>))` in previous
+     * result with `((this.content))`
+     */
+    close (activeResults, parser) {
+      this.linkedIds.forEach(id => {
+        this.prevText =
+          this.prevText.replace(
+            '<sup>((#' + id + '))</sup>', '((' + this.content + '))')
+      })
+      return this.prevText
+    }
+
+    addContent (footnoteContent) {
+      this.content = footnoteContent
+    }
+
+    addLink (linkObj) {
+      this.linkedIds.push(linkObj.id)
+    }
+  }
+
+  var FootnoteContentObj = class FootnoteContentObj {
+    constructor (prevText, parser) {
+      this.prevText = prevText
+      this.divStack = []
+    }
+
+    close (activeResults, parser) {
+      return activeResults
+    }
+  }
+
+  var DivObj = class DivObj {
+    constructor (prevText, parser) {
+      this.prevText = prevText
+    }
+
+    close (activeResults, parser) {
+      return this.prevText + '\n\n' + activeResults
+    }
+  }
+
   HTMLParser(CKEDITOR.instances.wiki__text.getData(), {
     attribute: '',
     link_title: '',
@@ -1175,7 +1243,10 @@ function parse_wikitext (id) {
     linkObj: null,
     last_tag: '',
     code_type: false,
-    in_endnotes: false,
+    inFootnoteSection: false,
+    // in_endnotes: false,
+    footnoteObj: null,
+    footnoteContentObj: null,
     is_smiley: false,
     geshi: false,
     downloadable_code: false,
@@ -1226,9 +1297,9 @@ function parse_wikitext (id) {
         } else if (tag == 'acronym') {
           return
         }
-        if (format_chars[tag] && this.in_endnotes) {
-          if (tag == 'sup') return
-        }
+        // if (format_chars[tag] && this.in_endnotes) {
+        //   if (tag == 'sup') return
+        // }
         if (tag == 'ol' || tag == 'ul') {
           if (this.tableStack.length > 0 && !this.list_level) {
             activeResults += '\n'
@@ -1324,7 +1395,20 @@ function parse_wikitext (id) {
           if (tag == 'div') {
             if (attrs[i].name == 'class' && attrs[i].value == 'footnotes') {
               tag = 'blank'
-              this.in_endnotes = true
+              this.inFootnoteSection = true
+              // remove the horizontal line before the footnote section
+              activeResults = activeResults.replace(/\s*----\s*$/, '')
+            } else if (attrs[i].name == 'class' && attrs[i].value == 'fn') {
+              tag = 'blank'
+              this.footnoteObj = new FootnoteObj(activeResults, this)
+              activeResults = ''
+            } else if (this.footnoteObj && attrs[i].name == 'class' &&
+              attrs[i].value == 'content'
+            ) {
+              tag = 'blank'
+              this.footnoteContentObj =
+                new FootnoteContentObj(activeResults, this)
+              activeResults = ''
             }
             break
           }
@@ -1476,6 +1560,13 @@ function parse_wikitext (id) {
           tag = 'blank'
         }
 
+        if (tag === 'div' && this.footnoteContentObj) {
+          this.footnoteContentObj.divStack.push(
+            new DivObj(activeResults, this)
+          )
+          tag = 'blank'
+        }
+
         if (this.is_smiley) {
           if (alt) {
             activeResults += alt + ' '
@@ -1544,31 +1635,31 @@ function parse_wikitext (id) {
         // if (tag == 'a' && this.list_level) {
         //   HTMLLinkInList = true
         // }
-        if (tag == 'a' && local_image) {
-        //   this.xcl_markup = true
-        //   return
-        // } else if (tag === 'a' && (this.export_code || this.code_snippet)) {
-        //   return
-        } else if (tag === 'a' && this.footnote) {
-          tag = 'fn_start'
-        } else if (tag == 'a' && bottom_note) {
-          HTMLParserTopNotes.push(this.id)
-        // } else if (tag == 'a' && this.externalMime) {
-        //   if (this.in_endnotes) {
-        //     this.link_class = 'media'
-        //     return
-        //   }
+        // if (tag == 'a' && local_image) {
+        // //   this.xcl_markup = true
+        // //   return
+        // // } else if (tag === 'a' && (this.export_code || this.code_snippet)) {
+        // //   return
+        // } else if (tag === 'a' && this.footnote) {
+        //   tag = 'fn_start'
+        // } else if (tag == 'a' && bottom_note) {
+        //   HTMLParserTopNotes.push(this.id)
+        // // } else if (tag == 'a' && this.externalMime) {
+        // //   if (this.in_endnotes) {
+        // //     this.link_class = 'media'
+        // //     return
+        // //   }
 
-        //   if (media_class && media_class == 'mediafile') {
-        //     activeResults += markup['img']
-        //     activeResults += this.attr + '|'
-        //     this.is_mediafile = true
-        //   }
+        // //   if (media_class && media_class == 'mediafile') {
+        // //     activeResults += markup['img']
+        // //     activeResults += this.attr + '|'
+        // //     this.is_mediafile = true
+        // //   }
 
-        //   return
-        }
+        // //   return
+        // }
 
-        if (this.in_endnotes && tag == 'a') return
+        // if (this.in_endnotes && tag == 'a') return
         if (tag === 'span') tag = 'blank'
         if (this.mfile && !this.attr) {
           this.attr = this.mfile
@@ -1633,7 +1724,7 @@ function parse_wikitext (id) {
         activeResults += ' '
         return
       }
-      if (this.in_endnotes && tag == 'a') return
+      // if (this.in_endnotes && tag == 'a') return
       if (tag === 'a' && this.linkObj) {
         activeResults = this.linkObj.close(activeResults, this)
         delete this.linkObj
@@ -1666,6 +1757,27 @@ function parse_wikitext (id) {
           activeResults = currSpan.close(activeResults)
         }
         tag = 'blank'
+      }
+
+      if (tag === 'div') {
+        if (this.footnoteContentObj) {
+          if (this.footnoteContentObj.divStack.length) {
+            activeResults =
+              this.footnoteContentObj.pop().close(activeResults, this)
+          } else {
+            // end of `<div class="content">` element
+            this.footnoteObj.addContent(
+              this.footnoteContentObj.close(activeResults)
+            )
+            delete this.footnoteContentObj
+          }
+          tag = 'blank'
+        } else if (this.footnoteObj) {
+          // end of `<div class="fn">` element
+          activeResults = this.footnoteObj.close(activeResults)
+          delete this.footnoteObj
+          tag = 'blank'
+        }
       }
       if (tag == 'dl' && this.downloadable_code) {
         this.downloadable_code = false
@@ -1757,8 +1869,6 @@ function parse_wikitext (id) {
           tag = ''
         }
       }
-
-      if (this.in_endnotes && current_tag == 'sup') { return }
 
       if (typeof tag === 'string') {
         activeResults += tag
@@ -1898,28 +2008,28 @@ function parse_wikitext (id) {
         }
       }
 
-      if (this.in_endnotes && HTMLParserTopNotes.length) {
-        if (text.match(/\w/) && !text.match(/^\s*\d\)\s*$/)) {
-          text = text.replace(/\)\s*$/, '_FN_PAREN_C_')
-          var index = HTMLParserTopNotes.length - 1
-          if (this.bottom_url) {
-            if (this.link_class && this.link_class == 'media') {
-              text = '{{' + this.bottom_url + '|' + text + '}}'
-            } else text = '[[' + this.bottom_url + '|' + text + ']]'
-          }
-          if (HTMLParserBottomNotes[HTMLParserTopNotes[index]]) {
-            text = text.replace('(', 'L_PARgr')
-            text = text.replace(')', 'R_PARgr')
-            HTMLParserBottomNotes[HTMLParserTopNotes[index]] += ' ' + text
-          } else {
-            text = text.replace('(', 'L_PARgr')
-            text = text.replace(')', 'R_PARgr')
-            HTMLParserBottomNotes[HTMLParserTopNotes[index]] = text
-          }
-        }
-        this.bottom_url = false
-        return
-      }
+      // if (this.in_endnotes && HTMLParserTopNotes.length) {
+      //   if (text.match(/\w/) && !text.match(/^\s*\d\)\s*$/)) {
+      //     text = text.replace(/\)\s*$/, '_FN_PAREN_C_')
+      //     var index = HTMLParserTopNotes.length - 1
+      //     if (this.bottom_url) {
+      //       if (this.link_class && this.link_class == 'media') {
+      //         text = '{{' + this.bottom_url + '|' + text + '}}'
+      //       } else text = '[[' + this.bottom_url + '|' + text + ']]'
+      //     }
+      //     if (HTMLParserBottomNotes[HTMLParserTopNotes[index]]) {
+      //       text = text.replace('(', 'L_PARgr')
+      //       text = text.replace(')', 'R_PARgr')
+      //       HTMLParserBottomNotes[HTMLParserTopNotes[index]] += ' ' + text
+      //     } else {
+      //       text = text.replace('(', 'L_PARgr')
+      //       text = text.replace(')', 'R_PARgr')
+      //       HTMLParserBottomNotes[HTMLParserTopNotes[index]] = text
+      //     }
+      //   }
+      //   this.bottom_url = false
+      //   return
+      // }
 
       if (text && text.length) {
         activeResults += text
