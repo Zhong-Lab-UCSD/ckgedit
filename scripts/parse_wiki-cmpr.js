@@ -1160,7 +1160,7 @@ function parse_wikitext (id) {
     }
   }
 
-  /** 
+  /**
    * Footnote object.
    * Corresponding to a `<div class="fn" ...></div>` element
    */
@@ -1171,7 +1171,7 @@ function parse_wikitext (id) {
       this.prevText = prevText
     }
 
-    /** 
+    /**
      * close the footnote object, replace the `((#<footnote_id>))` in previous
      * result with `((this.content))`
      */
@@ -1352,6 +1352,7 @@ function parse_wikitext (id) {
           //    cell is closed (or the line is closed)
           let currTable = this.tableStack[this.tableStack.length - 1]
           currTable.startCell(tag)
+          activeResults = ''
           this.in_td = true
         }
 
