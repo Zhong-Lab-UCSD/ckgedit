@@ -335,13 +335,17 @@ function parse_wikitext (id) {
    * @constructor
    * @param {string} prevText - previous Dokuwiki text, to be included when
    *    the Dokuwiki code for this table is generated.
+   * @param {object} parser - the `HTMLParser` object, to set some global
+   *    flags
    */
   var TableObj = class TableObj {
-    constructor (prevText) {
+    constructor (prevText, parser) {
       this.prevText = prevText
       this.rows = []
       this.pendingRowSpans = []
       this.pendingRowSpanIsHeader = []
+      this.externalListStack = parser.listStack
+      parser.listStack = []
     }
 
     /**
@@ -349,8 +353,10 @@ function parse_wikitext (id) {
      * @param {string} activeResults - the remaining `activeResults` that is
      *    not processed (should not happen as there should be no valid text
      *    between the last `</tr>` and the `</table>`)
+     * @param {object} parser - the `HTMLParser` object, to set some global
+     *    flags
      */
-    close (activeResults) {
+    close (activeResults, parser) {
       let tableResult = ''
       for (let i = 0; i < this.rows.length; i++) {
         let typeSeparator = null
@@ -372,6 +378,7 @@ function parse_wikitext (id) {
         }
         tableResult += '|\n'
       }
+      parser.listStack = this.externalListStack
       return this.prevText + '\n\n' + tableResult
     }
 
@@ -394,13 +401,25 @@ function parse_wikitext (id) {
       }
     }
 
-    startCell (tag) {
+    startCell (tag, parser) {
       this.rows[this.rows.length - 1].push(new TableCellObj(tag))
+      if (parser.listStack.length) {
+        console.error('HTML syntax error: list tag appeared before valid ' +
+          'table cell tag.')
+        parser.listStack = []
+      }
     }
 
     closeCell (activeResults) {
       let currentRow = this.rows[this.rows.length - 1]
       let currCell = this.getCurrentCell()
+      if (parser.listStack.length) {
+        console.error('HTML syntax error: list tag not closed before valid ' +
+          'table cell tag closes.')
+        while (parser.listStack.length) {
+          activeResults = parser.listStack.pop().close(activeResults, parser)
+        }
+      }
       currCell.close(activeResults)
       /** Insert col span placeholders */
       for (let col = 1; col < currCell.colSpan; col++) {
@@ -1214,6 +1233,39 @@ function parse_wikitext (id) {
     }
   }
 
+  var ListObj = class ListObj {
+    constructor (prevText, ordered, level, parser) {
+      this.prevText = prevText
+      this.isOrdered = !!ordered
+      this.level = level || 0
+      this.childList = null
+      this.listEntries = []
+    }
+
+    openEntry (activeResults, parser) {
+      
+    }
+
+    closeEntry (activeResults, parser) {
+
+    }
+
+    close (activeResults, parser) {
+
+    }
+
+    get lastEntry () {
+      return this.listEntries[this.listEntries.length - 1]
+    }
+  }
+
+  var ListEntryObj = class ListEntryObj {
+    
+  }
+
+  ListEntryObj.complexEntryBegin = '~~LIST_ENTRY_WRAP_START~~<WRAP>\n'
+  ListEntryObj.complexEntryEnd = '\n</WRAP>~~LIST_ENTRY_WRAP_STOP~~'
+
   HTMLParser(CKEDITOR.instances.wiki__text.getData(), {
     attribute: '',
     link_title: '',
@@ -1230,6 +1282,11 @@ function parse_wikitext (id) {
      * @type {Array<SpanObj>}
      */
     spanStack: [],
+    /**
+     * listStack - an array of lists currently in the hierarchy.
+     * @type {Array<SpanObj>}
+     */
+    listStack: [],
     in_multi_plugin: false,
     is_rowspan: false,
     list_level: 0,
@@ -1341,9 +1398,8 @@ function parse_wikitext (id) {
         }
 
         if (tag === 'table') {
-          this.tableStack.push(new TableObj(activeResults))
+          this.tableStack.push(new TableObj(activeResults, this))
           activeResults = ''
-          this.in_table = true
         } else if (tag === 'tr') {
           let currTable = this.tableStack[this.tableStack.length - 1]
           currTable.startRow()
@@ -1585,7 +1641,7 @@ function parse_wikitext (id) {
           }
 
           HTMLParser_LBR = true
-          if (this.tableStack.length > 0 || this.list_started) {
+          if (this.tableStack.length > 0 || this.linkStack.length > 0) {
             // There are the cases where a '\n' is not supposed to appear
             // in the final wiki code.
             // Use `br_same_line` ('\\\\ ') instead
@@ -1799,8 +1855,7 @@ function parse_wikitext (id) {
         return
       } else if (tag === 'table') {
         let finishedTable = this.tableStack.pop()
-        this.in_table = !!this.tableStack.length
-        activeResults = finishedTable.close(activeResults)
+        activeResults = finishedTable.close(activeResults, this)
         return
       }
 
@@ -1940,7 +1995,7 @@ function parse_wikitext (id) {
         }
 
         if (this.format_tag) {
-          if (!this.list_started || this.in_table) text = text.replace(/^\s+/, '@@_SP_@@')
+          if (!this.list_started || this.tableStack.length) text = text.replace(/^\s+/, '@@_SP_@@')
         } else if (this.last_tag == 'a') {
           text = text.replace(/^\s{2,}/, ' ')
         }

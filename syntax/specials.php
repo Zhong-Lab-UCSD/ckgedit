@@ -68,7 +68,7 @@ class syntax_plugin_ckgedit_specials extends DokuWiki_Syntax_Plugin
         $this->Lexer->addSpecialPattern('~~MULTI_PLUGIN_OPEN~~', $mode, 'plugin_ckgedit_specials');
         $this->Lexer->addSpecialPattern('~~MULTI_PLUGIN_CLOSE~~', $mode, 'plugin_ckgedit_specials');
         $this->Lexer->addSpecialPattern('~~COMPLEX_TABLES~~', $mode, 'plugin_ckgedit_specials');
-        $this->Lexer->addSpecialPattern('~~TABLE_CELL_WRAP_(?:START|STOP)~~', $mode, 'plugin_ckgedit_specials');
+        $this->Lexer->addSpecialPattern('~~(?:TABLE_CELL|LIST_ENTRY)_WRAP_(?:START|STOP)~~', $mode, 'plugin_ckgedit_specials');
         $this->Lexer->addSpecialPattern('~~NO_STYLING~~', $mode, 'plugin_ckgedit_specials');
         $this->Lexer->addEntryPattern('~~START_HTML_BLOCK~~[\n\s]*<code>(?=.*?<\/code>[\n\s]*~~CLOSE_HTML_BLOCK~~)', $mode, 'plugin_ckgedit_specials');
         $this->Lexer->addEntryPattern('~~START_HTML_BLOCK__CKG_EDIT_~~(?=.*?~~CLOSE_HTML_BLOCK__CKG_EDIT_~~)', $mode, 'plugin_ckgedit_specials');
@@ -95,7 +95,7 @@ class syntax_plugin_ckgedit_specials extends DokuWiki_Syntax_Plugin
                     return array($state, "<span class='multi_p_close'></span>", TRUE);
                 } elseif (preg_match('/(TABLES|STYLING|AUTO_INTERNAL)/', $match)) {
                     return array($state, "", FALSE);
-                } elseif (preg_match('/~~TABLE_CELL_WRAP_(START|STOP)~~/', $match)) {
+                } elseif (preg_match('/~~(?:TABLE_CELL|LIST_ENTRY)_WRAP_(?:START|STOP)~~/', $match)) {
                     return array($state, "", FALSE);
                 }
                 // no break
